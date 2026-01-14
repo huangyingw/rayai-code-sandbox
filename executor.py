@@ -67,7 +67,7 @@ MAX_CPU_TIME = {cpu_time}  # seconds
 MAX_MEMORY = {memory} * 1024 * 1024  # bytes
 MAX_FILE_SIZE = 1024 * 1024  # 1MB
 MAX_OPEN_FILES = 10
-MAX_RECURSION = {recursion_limit}  # recursion depth limit
+MAX_RECURSION_DEPTH = {recursion_limit}  # Recursion limit
 
 try:
     resource.setrlimit(resource.RLIMIT_CPU, (MAX_CPU_TIME, MAX_CPU_TIME))
@@ -78,7 +78,7 @@ except (ValueError, resource.error):
     pass  # Some limits may not be available on all systems
 
 # Set recursion limit to prevent stack overflow
-sys.setrecursionlimit(MAX_RECURSION)
+sys.setrecursionlimit(MAX_RECURSION_DEPTH)
 
 # Set up signal handler for CPU time limit
 def timeout_handler(signum, frame):
@@ -111,6 +111,10 @@ _safe_builtins = {{
     'KeyError': KeyError, 'IndexError': IndexError,
     'AttributeError': AttributeError, 'RuntimeError': RuntimeError,
     'StopIteration': StopIteration, 'ZeroDivisionError': ZeroDivisionError,
+    'SystemExit': SystemExit, 'RecursionError': RecursionError,
+    'MemoryError': MemoryError, 'OverflowError': OverflowError,
+    'ArithmeticError': ArithmeticError, 'LookupError': LookupError,
+    'AssertionError': AssertionError, 'NotImplementedError': NotImplementedError,
 }}
 
 # Block dangerous builtins
@@ -155,12 +159,12 @@ class CodeExecutor:
         timeout: int = 10,  # seconds
         max_memory: int = 128,  # MB
         max_output_size: int = 1024 * 1024,  # 1MB
-        recursion_limit: int = 100,  # max recursion depth
+        max_recursion_depth: int = 100,  # Recursion limit (lower than default 1000)
     ):
         self.timeout = timeout
         self.max_memory = max_memory
         self.max_output_size = max_output_size
-        self.recursion_limit = recursion_limit
+        self.max_recursion_depth = max_recursion_depth
         self.tasks: dict[str, TaskResult] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.output_buffers: dict[str, list[str]] = {}
@@ -197,6 +201,12 @@ class CodeExecutor:
         if len(code) > 100000:
             return False, "Code exceeds maximum length (100000 characters)"
 
+        # Validate UTF-8 encoding
+        try:
+            code.encode('utf-8').decode('utf-8')
+        except UnicodeError as e:
+            return False, f"Invalid encoding in code: {e}"
+
         # Try to compile the code to check for syntax errors
         try:
             compile(code, '<user_code>', 'exec')
@@ -224,14 +234,17 @@ class CodeExecutor:
             task.finished_at = datetime.now()
             return task
 
+        # Normalize code (already validated as UTF-8)
+        normalized_code = code
+
         # Create the sandbox wrapper script
         blocked_modules_str = repr(BLOCKED_IMPORTS)
         wrapper_code = SANDBOX_WRAPPER.format(
             cpu_time=self.timeout,
             memory=self.max_memory,
-            recursion_limit=self.recursion_limit,
+            recursion_limit=self.max_recursion_depth,
             blocked_modules=blocked_modules_str,
-            user_code=code,
+            user_code=normalized_code,
         )
 
         # Write wrapper to temp file
@@ -304,30 +317,43 @@ class CodeExecutor:
             if process.returncode == 0:
                 task.status = TaskStatus.COMPLETED
             elif process.returncode == 137 or process.returncode == -24:
-                # 137 = 128 + 9 (SIGKILL), -24 = SIGXCPU
+                # 137 = 128 + 9 (SIGKILL after SIGXCPU)
+                # -24 = SIGXCPU
                 task.status = TaskStatus.TIMEOUT
                 task.error_message = "CPU time limit exceeded"
-            elif process.returncode == -9 or process.returncode == 9:
+            elif process.returncode == -9 or process.returncode == 128 + 9:
                 task.status = TaskStatus.KILLED
                 task.error_message = "Process was killed (possibly due to memory limit)"
+            elif process.returncode == -6 or process.returncode == 128 + 6:
+                # SIGABRT - often from memory allocation failure
+                task.status = TaskStatus.FAILED
+                task.error_message = "Process aborted (memory allocation failure)"
             else:
                 task.status = TaskStatus.FAILED
                 # Extract meaningful error message from stderr
                 if task.stderr:
                     stderr_lines = task.stderr.strip().split('\n')
-                    # Look for the actual error line (usually contains exception name)
-                    error_line = stderr_lines[-1]
-                    # Check for RecursionError specifically
+                    # Check for specific error types first
                     if 'RecursionError' in task.stderr:
                         task.error_message = "RecursionError: maximum recursion depth exceeded"
                     elif 'MemoryError' in task.stderr:
                         task.error_message = "MemoryError: out of memory"
                     else:
-                        task.error_message = error_line
+                        # Look for common Python error patterns
+                        for line in reversed(stderr_lines):
+                            if ': ' in line and any(err in line for err in [
+                                'Error', 'Exception', 'Traceback'
+                            ]):
+                                task.error_message = line
+                                break
+                        else:
+                            task.error_message = stderr_lines[-1] if stderr_lines else None
+                else:
+                    task.error_message = f"Process exited with code {process.returncode}"
 
         except Exception as e:
             task.status = TaskStatus.FAILED
-            task.error_message = str(e)
+            task.error_message = f"Execution error: {type(e).__name__}: {e}"
 
         finally:
             # Cleanup
