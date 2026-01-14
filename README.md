@@ -2,12 +2,22 @@
 
 A secure HTTP API for executing arbitrary Python code with real-time streaming output.
 
+## Features
+
+- **Docker container isolation** (optional, recommended for production)
+- **Multi-layer security**: OS-level + Python-level restrictions
+- **Resource limits**: CPU, memory, processes, files
+- **Network isolation**: No network access in sandbox
+- **Module whitelist**: Only safe modules allowed
+- **Real-time streaming**: SSE-based output streaming
+
 ## Setup
 
 ### Requirements
 
 - Python 3.10+
 - Unix-like OS (Linux/macOS) for resource limits
+- Docker (optional, for enhanced security)
 
 ### Installation
 
@@ -18,13 +28,22 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# (Optional) Build Docker sandbox image for enhanced security
+docker build -t python-sandbox:latest -f Dockerfile.sandbox .
 ```
 
 ### Running the Server
 
 ```bash
-# Development
+# Development (auto-detects Docker)
 python main.py
+
+# Force Docker mode
+USE_DOCKER=true python main.py
+
+# Force subprocess mode (no Docker)
+USE_DOCKER=false python main.py
 
 # Or with uvicorn directly
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -32,7 +51,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000`.
 
-API documentation: `http://localhost:8000/docs`
+- API documentation: `http://localhost:8000/docs`
+- Security info: `http://localhost:8000/info`
 
 ## API Usage
 
@@ -84,77 +104,109 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 
 ## Approach & Design Decisions
 
-### Architecture
+### Architecture (with Docker)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     FastAPI Server                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │POST /execute│  │GET /tasks/id│  │GET /tasks/stream│ │
-│  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
-│         │                │                   │          │
-│         ▼                ▼                   ▼          │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                  CodeExecutor                     │  │
-│  │  - Task management (in-memory store)             │  │
-│  │  - Output buffering for streaming                │  │
-│  └──────────────────────┬───────────────────────────┘  │
-│                         │                               │
-│                         ▼                               │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │              Sandbox Subprocess                   │  │
-│  │  - Resource limits (CPU, memory, files)          │  │
-│  │  - Restricted builtins                           │  │
-│  │  - Blocked dangerous modules                     │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Host Server                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                   FastAPI Server                        │  │
+│  │  POST /execute  │  GET /tasks/id  │  GET /tasks/stream  │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+│                           │                                   │
+│                           ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                  DockerExecutor                         │  │
+│  │  - Task management (in-memory store)                   │  │
+│  │  - Output buffering for streaming                      │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+│                           │                                   │
+│                           ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              Docker Container (per task)                │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │  Security Restrictions:                          │  │  │
+│  │  │  • --network=none (no network)                   │  │  │
+│  │  │  • --read-only (read-only filesystem)            │  │  │
+│  │  │  • --cap-drop=ALL (no capabilities)              │  │  │
+│  │  │  • --memory=128m (memory limit)                  │  │  │
+│  │  │  • --pids-limit=50 (process limit)               │  │  │
+│  │  │  • --user=65534 (nobody user)                    │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │  Python Sandbox (second layer):                  │  │  │
+│  │  │  • Restricted builtins                           │  │  │
+│  │  │  • Module whitelist                              │  │  │
+│  │  │  • Resource limits (backup)                      │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Security Measures
+### Security Layers
 
-1. **Process Isolation**: Code runs in a separate subprocess, not in the main server process.
+#### Layer 1: Docker Container Isolation (when enabled)
 
-2. **Resource Limits** (via `resource` module):
-   - CPU time: 10 seconds max
-   - Memory: 128MB max
-   - File size: 1MB max
-   - Open files: 10 max
+| Security Feature | Implementation |
+|------------------|----------------|
+| Network isolation | `--network=none` |
+| Filesystem isolation | `--read-only` + tmpfs |
+| Capability dropping | `--cap-drop=ALL` |
+| Resource limits | `--memory`, `--cpus`, `--pids-limit` |
+| User namespace | `--user=65534:65534` (nobody) |
+| Privilege escalation | `--security-opt=no-new-privileges` |
 
-3. **Restricted Builtins**: Dangerous functions are removed:
-   - `eval`, `exec`, `compile` - prevent dynamic code execution
-   - `open`, `input` - prevent file/stdin access
-   - `__import__` - replaced with restricted version
-   - `globals`, `locals`, `vars`, `dir` - prevent introspection
+#### Layer 2: Python Sandbox
 
-4. **Module Blocklist**: Dangerous modules are blocked:
-   - `os`, `subprocess`, `shutil` - system commands
-   - `socket`, `http`, `urllib`, `requests` - network access
-   - `ctypes` - low-level memory access
-   - `multiprocessing`, `threading` - resource exhaustion
-   - `pickle`, `marshal` - deserialization attacks
-   - And more...
+| Security Feature | Implementation |
+|------------------|----------------|
+| Restricted builtins | Remove `eval`, `exec`, `open`, `__import__`, etc. |
+| Module whitelist | Only allow safe modules: `math`, `json`, `datetime`, etc. |
+| Resource limits | `resource.setrlimit()` for CPU, memory, files |
+| Process limits | `RLIMIT_NPROC=1` to prevent fork bombs |
 
-5. **Output Limits**: Maximum 1MB output to prevent memory exhaustion.
+#### Allowed Modules (Whitelist)
 
-6. **Timeout Protection**: Hard timeout with process kill.
+```python
+ALLOWED_MODULES = {
+    'math', 'cmath', 'decimal', 'fractions', 'random', 'statistics',
+    'itertools', 'functools', 'operator',
+    'string', 'textwrap',
+    'datetime', 'calendar', 'time',
+    'collections', 'heapq', 'bisect', 'array',
+    'copy', 'pprint',
+    'enum', 'dataclasses',
+    're', 'json',
+}
+```
 
 ### Trade-offs
 
 | Decision | Pros | Cons |
 |----------|------|------|
-| Subprocess vs Docker | Simple, fast startup, no dependencies | Less isolation than containers |
-| Blocklist vs allowlist | More permissive, allows stdlib | May miss new attack vectors |
+| Docker + Python sandbox | Defense in depth, strong isolation | Slower startup (~100ms), requires Docker |
+| Whitelist vs blocklist | More secure, explicit control | Less permissive, may need updates |
 | In-memory task store | Simple, fast | Lost on restart, no persistence |
 | SSE vs WebSocket | Simpler, HTTP-compatible | One-way only |
 
-### What's NOT Implemented (would need more time)
+### Security Comparison
 
-1. **Docker/container isolation** - Would provide better security through namespaces, cgroups
-2. **Persistent task storage** - Database for task history
-3. **Rate limiting** - Prevent abuse
-4. **Authentication** - Control who can execute code
-5. **Network isolation** - Block network at OS level
-6. **Seccomp/AppArmor** - Syscall filtering
+| Attack Vector | Subprocess Only | Docker + Sandbox |
+|---------------|-----------------|------------------|
+| Module import bypass | Partial protection | ✓ Blocked |
+| `__class__` escape | Vulnerable | ✓ Blocked by whitelist |
+| Fork bomb | Blocked by import | ✓ Blocked by `--pids-limit` |
+| Network access | Blocked by import | ✓ Blocked by `--network=none` |
+| File system access | Blocked by builtins | ✓ Blocked by `--read-only` |
+| Memory exhaustion | `RLIMIT_AS` | ✓ `--memory` (more reliable) |
+
+### What's NOT Implemented (production considerations)
+
+1. **Persistent task storage** - Database for task history
+2. **Rate limiting** - Prevent abuse
+3. **Authentication** - Control who can execute code
+4. **Seccomp profiles** - Fine-grained syscall filtering
+5. **gVisor/Firecracker** - Even stronger isolation
 
 ## Test Examples
 
@@ -222,6 +274,21 @@ eval("__import__('os').system('rm -rf /')")
 ## Running Tests
 
 ```bash
-# Run the test examples
+# Run basic test examples
 python test_examples.py
+
+# Run security test suite (tests sandbox escapes)
+python security_tests.py
 ```
+
+### Security Test Categories
+
+The `security_tests.py` includes tests for:
+
+1. **Basic blocked operations** - `import os`, `open()`, `eval()`
+2. **Class-based escapes** - `__class__.__bases__`, `__mro__`, `__globals__`
+3. **Import bypasses** - `__import__`, `importlib`
+4. **Resource exhaustion** - Fork bombs, memory bombs, infinite loops
+5. **File system access** - Read/write files, path traversal
+6. **Network access** - Sockets, HTTP requests, DNS
+7. **Code injection** - `compile()`, pickle deserialization

@@ -2,29 +2,53 @@
 Code Executor Sandbox API
 
 A secure HTTP API for executing arbitrary Python code with real-time streaming output.
+
+Security features:
+- Docker container isolation (when available)
+- Resource limits (CPU, memory, processes)
+- Network isolation
+- Restricted Python builtins
+- Module whitelist
 """
 
 import asyncio
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from executor import CodeExecutor, TaskStatus
+# Choose executor based on environment
+USE_DOCKER = os.getenv("USE_DOCKER", "auto").lower()
+
+if USE_DOCKER == "true":
+    from docker_executor import DockerExecutor as Executor, TaskStatus
+    use_docker = True
+elif USE_DOCKER == "false":
+    from executor import CodeExecutor as Executor, TaskStatus
+    use_docker = False
+else:  # auto
+    try:
+        from docker_executor import DockerExecutor as Executor, TaskStatus
+        use_docker = Executor.is_docker_available()
+    except ImportError:
+        from executor import CodeExecutor as Executor, TaskStatus
+        use_docker = False
 
 
 app = FastAPI(
     title="Code Executor Sandbox",
     description="Execute Python code safely with streaming output",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 # Global executor instance
-executor = CodeExecutor(
+executor = Executor(
     timeout=10,  # 10 seconds max execution time
     max_memory=128,  # 128MB max memory
     max_output_size=1024 * 1024,  # 1MB max output
+    **({"use_docker": use_docker} if hasattr(Executor, "__init__") and "use_docker" in Executor.__init__.__code__.co_varnames else {}),
 )
 
 
@@ -172,6 +196,27 @@ async def kill_task(task_id: str):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/info")
+async def get_info():
+    """Get sandbox configuration and security info."""
+    return {
+        "version": "1.1.0",
+        "docker_enabled": use_docker,
+        "security_features": {
+            "container_isolation": use_docker,
+            "network_isolation": use_docker,
+            "resource_limits": True,
+            "restricted_builtins": True,
+            "module_whitelist": True,
+        },
+        "limits": {
+            "timeout_seconds": executor.timeout,
+            "max_memory_mb": executor.max_memory,
+            "max_output_bytes": executor.max_output_size,
+        },
+    }
 
 
 if __name__ == "__main__":
