@@ -39,10 +39,15 @@ class DockerRunner:
         self._container_names: dict[str, str] = {}
 
     def _get_seccomp_path(self) -> Optional[str]:
-        """Get path to seccomp profile if available."""
-        seccomp_path = os.path.join(PROJECT_ROOT, "seccomp-profile.json")
-        if os.path.exists(seccomp_path):
-            return seccomp_path
+        """Get path to seccomp profile if available.
+
+        Note: Currently disabled as Docker's default seccomp profile is sufficient.
+        Custom profile caused issues with Python execution (blocked execve).
+        """
+        # Disabled: Docker's default seccomp profile provides adequate security
+        # seccomp_path = os.path.join(PROJECT_ROOT, "seccomp-profile.json")
+        # if os.path.exists(seccomp_path):
+        #     return seccomp_path
         return None
 
     def build_docker_command(self, task_id: str, script_path: str) -> list[str]:
