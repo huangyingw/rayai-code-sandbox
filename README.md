@@ -87,28 +87,69 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     FastAPI Server                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │POST /execute│  │GET /tasks/id│  │GET /tasks/stream│ │
-│  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
-│         │                │                   │          │
-│         ▼                ▼                   ▼          │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                  CodeExecutor                     │  │
-│  │  - Task management (in-memory store)             │  │
-│  │  - Output buffering for streaming                │  │
-│  └──────────────────────┬───────────────────────────┘  │
-│                         │                               │
-│                         ▼                               │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │              Sandbox Subprocess                   │  │
-│  │  - Resource limits (CPU, memory, files)          │  │
-│  │  - Restricted builtins                           │  │
-│  │  - Blocked dangerous modules                     │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                        FastAPI Server                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │POST /execute│  │GET /tasks/id│  │GET /tasks/{id}/stream│ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+│         │                │                     │             │
+│         └────────────────┼─────────────────────┘             │
+│                          ▼                                   │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                  SandboxExecutor                       │  │
+│  │  ┌─────────────────┐    ┌────────────────────────┐    │  │
+│  │  │  TaskStorage    │    │   Config               │    │  │
+│  │  │  (Abstract)     │    │   - ExecutorConfig     │    │  │
+│  │  │  └─MemoryStorage│    │   - SecurityConfig     │    │  │
+│  │  │  └─RedisStorage │    │   - ServerConfig       │    │  │
+│  │  │    (future)     │    │                        │    │  │
+│  │  └─────────────────┘    └────────────────────────┘    │  │
+│  └──────────────────────────┬────────────────────────────┘  │
+│                             │                                │
+│                             ▼                                │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                Sandbox Subprocess                      │  │
+│  │  - Resource limits (CPU, memory, files)               │  │
+│  │  - Restricted builtins                                │  │
+│  │  - Blocked dangerous modules                          │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+### Project Structure
+
+```
+sandbox/
+├── __init__.py           # Package initialization
+├── config.py             # Configuration management (env vars)
+├── models.py             # Data models (Task, TaskStatus)
+├── logging.py            # Logging configuration
+├── executor/
+│   ├── __init__.py
+│   ├── sandbox.py        # Main executor implementation
+│   └── wrapper.py        # Sandbox wrapper script template
+├── storage/
+│   ├── __init__.py
+│   ├── base.py           # Abstract storage interface
+│   └── memory.py         # In-memory storage implementation
+└── api/
+    ├── __init__.py
+    └── routes.py         # FastAPI routes
+```
+
+### Configuration
+
+Configuration via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXECUTOR_TIMEOUT` | 10 | Max execution time (seconds) |
+| `EXECUTOR_MAX_MEMORY` | 128 | Max memory (MB) |
+| `EXECUTOR_MAX_OUTPUT` | 1048576 | Max output size (bytes) |
+| `SERVER_HOST` | 0.0.0.0 | Server bind host |
+| `SERVER_PORT` | 8000 | Server bind port |
+| `LOG_LEVEL` | INFO | Logging level |
+| `DEBUG` | false | Debug mode |
 
 ### Security Measures
 
