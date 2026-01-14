@@ -29,9 +29,21 @@ class RateLimitConfig:
 
 
 @dataclass
+class DockerConfig:
+    """Docker container configuration (Docker is mandatory)."""
+    image: str = "python-sandbox:latest"
+    network: str = "none"  # No network access
+    memory_limit: str = "128m"
+    cpu_limit: float = 1.0
+    pids_limit: int = 50
+    read_only: bool = True
+    user: str = "65534:65534"  # nobody:nogroup
+
+
+@dataclass
 class SecurityConfig:
     """Security-related configuration."""
-    use_docker: str = "auto"  # "true", "false", or "auto"
+    # Docker is mandatory - no option to disable
     blocked_modules: List[str] = field(default_factory=lambda: [
         "os", "subprocess", "shutil", "sys", "importlib",
         "ctypes", "multiprocessing", "threading", "socket",
@@ -70,6 +82,7 @@ class Config:
     """Main configuration container."""
     executor: ExecutorConfig = field(default_factory=ExecutorConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    docker: DockerConfig = field(default_factory=DockerConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
 
@@ -98,9 +111,15 @@ def load_config() -> Config:
     if burst_size := os.getenv("RATE_LIMIT_BURST_SIZE"):
         config.rate_limit.burst_size = int(burst_size)
 
-    # Security settings
-    if use_docker := os.getenv("USE_DOCKER"):
-        config.security.use_docker = use_docker.lower()
+    # Docker settings (Docker is mandatory, but image can be configured)
+    if docker_image := os.getenv("DOCKER_IMAGE"):
+        config.docker.image = docker_image
+    if docker_memory := os.getenv("DOCKER_MEMORY_LIMIT"):
+        config.docker.memory_limit = docker_memory
+    if docker_cpu := os.getenv("DOCKER_CPU_LIMIT"):
+        config.docker.cpu_limit = float(docker_cpu)
+    if docker_pids := os.getenv("DOCKER_PIDS_LIMIT"):
+        config.docker.pids_limit = int(docker_pids)
 
     # Server settings
     if host := os.getenv("SERVER_HOST"):

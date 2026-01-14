@@ -1,13 +1,13 @@
 """
 Sandboxed code executor.
 
-Executes Python code in a restricted subprocess with resource limits.
+Executes Python code in isolated Docker containers with resource limits.
+Docker is mandatory for security.
 """
 
 import asyncio
 import logging
 import os
-import sys
 import tempfile
 import uuid
 from datetime import datetime
@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 from ..config import Config, config as default_config
 from ..models import Task, TaskStatus
 from ..storage import TaskStorage, MemoryStorage
-from .wrapper import generate_wrapper
+from .docker import DockerRunner, generate_docker_wrapper
 
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,8 @@ class SandboxExecutor:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         # Semaphore to limit concurrent executions
         self._semaphore = asyncio.Semaphore(self.config.executor.max_concurrent_tasks)
+        # Docker runner for container execution
+        self._docker = DockerRunner(self.config.docker)
 
     def get_running_task_count(self) -> int:
         """Get the number of currently running tasks."""
@@ -156,29 +158,30 @@ class SandboxExecutor:
             logger.info(f"Task {task_id} failed validation: {error_msg}")
             return task
 
-        # Generate sandbox wrapper script
-        wrapper_code = generate_wrapper(
+        # Generate Docker sandbox wrapper script
+        wrapper_code = generate_docker_wrapper(
             code=task.code,
             cpu_time=self.config.executor.timeout,
-            memory=self.config.executor.max_memory,
-            recursion_limit=self.config.executor.recursion_limit,
-            blocked_modules=self.config.security.blocked_modules,
+            memory_mb=self.config.executor.max_memory,
+            allowed_modules=self.config.security.allowed_modules,
         )
 
-        # Write to temporary file
+        # Write to temporary file (must be in /tmp for Docker mount)
         with tempfile.NamedTemporaryFile(
-            mode='w', suffix='.py', delete=False
+            mode='w', suffix='.py', delete=False, dir='/tmp'
         ) as f:
             f.write(wrapper_code)
             temp_file = f.name
 
         try:
-            # Execute in subprocess
+            # Build Docker command and execute in container
+            cmd = self._docker.build_docker_command(task_id, temp_file)
+            logger.debug(f"Docker command for task {task_id}: {' '.join(cmd[:10])}...")
+
             process = await asyncio.create_subprocess_exec(
-                sys.executable, '-u', temp_file,  # -u for unbuffered output
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                close_fds=True,
             )
             self._processes[task_id] = process
 
@@ -289,26 +292,40 @@ class SandboxExecutor:
                 pass
             if task_id in self._processes:
                 del self._processes[task_id]
+            # Clean up Docker container name mapping
+            self._docker.cleanup_task(task_id)
 
         task.finished_at = datetime.now()
         await self.storage.update(task)
         return task
 
     async def kill_task(self, task_id: str) -> bool:
-        """Kill a running task."""
+        """Kill a running task and its Docker container."""
         process = self._processes.get(task_id)
+        killed = False
+
+        # Kill the Docker container
+        await self._docker.kill_container(task_id)
+
+        # Kill the process if still running
         if process:
             try:
                 process.kill()
                 await process.wait()
-                task = await self.storage.get(task_id)
-                if task:
-                    task.status = TaskStatus.KILLED
-                    task.error_message = "Task was manually killed"
-                    task.finished_at = datetime.now()
-                    await self.storage.update(task)
-                logger.info(f"Task {task_id} was killed")
-                return True
+                killed = True
             except ProcessLookupError:
-                pass
+                killed = True  # Already dead
+
+        if killed or task_id in self._processes:
+            task = await self.storage.get(task_id)
+            if task:
+                task.status = TaskStatus.KILLED
+                task.error_message = "Task was manually killed"
+                task.finished_at = datetime.now()
+                await self.storage.update(task)
+            logger.info(f"Task {task_id} was killed")
+            self._processes.pop(task_id, None)
+            self._docker.cleanup_task(task_id)
+            return True
+
         return False

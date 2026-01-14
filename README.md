@@ -4,7 +4,7 @@ A secure HTTP API for executing arbitrary Python code with real-time streaming o
 
 ## Features
 
-- **Docker container isolation** (optional, recommended for production)
+- **Docker container isolation** (MANDATORY - each task runs in isolated container)
 - **Multi-layer security**: OS-level + Python-level restrictions
 - **Resource limits**: CPU, memory, processes, files
 - **Network isolation**: No network access in sandbox
@@ -19,7 +19,7 @@ A secure HTTP API for executing arbitrary Python code with real-time streaming o
 
 - Python 3.10+
 - Unix-like OS (Linux/macOS) for resource limits
-- Docker (optional, for enhanced security)
+- Docker (REQUIRED - application will not start without Docker)
 
 ### Installation
 
@@ -31,25 +31,21 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# (Optional) Build Docker sandbox image for enhanced security
+# Build Docker sandbox image (REQUIRED)
 docker build -t python-sandbox:latest -f Dockerfile.sandbox .
 ```
 
 ### Running the Server
 
 ```bash
-# Development (auto-detects Docker)
+# Start the server (Docker required)
 python main.py
-
-# Force Docker mode
-USE_DOCKER=true python main.py
-
-# Force subprocess mode (no Docker)
-USE_DOCKER=false python main.py
 
 # Or with uvicorn directly
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Note: The server will fail to start if Docker is not available.
 
 The API will be available at `http://localhost:8000`.
 
@@ -185,11 +181,14 @@ Configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `USE_DOCKER` | auto | Docker mode: "true", "false", or "auto" |
 | `EXECUTOR_TIMEOUT` | 10 | Max execution time (seconds) |
 | `EXECUTOR_MAX_MEMORY` | 128 | Max memory (MB) |
 | `EXECUTOR_MAX_OUTPUT` | 1048576 | Max output size (bytes) |
 | `EXECUTOR_MAX_CONCURRENT` | 10 | Max concurrent running tasks |
+| `DOCKER_IMAGE` | python-sandbox:latest | Docker image for sandbox |
+| `DOCKER_MEMORY_LIMIT` | 128m | Container memory limit |
+| `DOCKER_CPU_LIMIT` | 1.0 | Container CPU limit |
+| `DOCKER_PIDS_LIMIT` | 50 | Container process limit |
 | `RATE_LIMIT_ENABLED` | true | Enable rate limiting |
 | `RATE_LIMIT_REQUESTS_PER_MINUTE` | 60 | Max requests per minute per IP |
 | `RATE_LIMIT_BURST_SIZE` | 10 | Allow burst of requests |
@@ -200,7 +199,7 @@ Configuration via environment variables:
 
 ### Security Layers
 
-#### Layer 1: Docker Container Isolation (when enabled)
+#### Layer 1: Docker Container Isolation (MANDATORY)
 
 | Security Feature | Implementation |
 |------------------|----------------|
@@ -238,17 +237,19 @@ ALLOWED_MODULES = {
 }
 ```
 
-### Security Comparison
+### Security Coverage
 
-| Attack Vector | Subprocess Only | Docker + Sandbox |
-|---------------|-----------------|------------------|
-| Module import bypass | Partial protection | ✓ Blocked |
-| `__class__` escape | ✓ Blocked by pattern scan | ✓ Double blocked |
-| Fork bomb | Blocked by import | ✓ Blocked by `--pids-limit` + seccomp |
-| Network access | Blocked by import | ✓ Blocked by `--network=none` |
-| File system access | Blocked by builtins | ✓ Blocked by `--read-only` |
-| Memory exhaustion | `RLIMIT_AS` | ✓ `--memory` (more reliable) |
-| Shell escape | N/A | ✓ Shells removed from container |
+| Attack Vector | Protection Mechanism |
+|---------------|---------------------|
+| Module import bypass | ✓ Module whitelist + Docker isolation |
+| `__class__` escape | ✓ Pattern scanning + attribute blocking |
+| Fork bomb | ✓ `--pids-limit` + seccomp syscall filter |
+| Network access | ✓ `--network=none` (complete isolation) |
+| File system access | ✓ `--read-only` filesystem |
+| Memory exhaustion | ✓ `--memory` limit (Docker enforced) |
+| Shell escape | ✓ Shells removed from container image |
+| Privilege escalation | ✓ `--cap-drop=ALL` + `no-new-privileges` |
+| Syscall attacks | ✓ Seccomp profile filtering |
 
 ### Robustness Features
 
@@ -270,7 +271,8 @@ ALLOWED_MODULES = {
 
 | Decision | Pros | Cons |
 |----------|------|------|
-| Docker + Python sandbox | Defense in depth, strong isolation | Slower startup (~100ms), requires Docker |
+| Docker mandatory | Maximum security, defense in depth | Requires Docker installation (~100ms startup) |
+| One container per task | Complete task isolation, no cross-contamination | Higher resource usage |
 | Whitelist vs blocklist | More secure, explicit control | Less permissive, may need updates |
 | In-memory task store | Simple, fast | Lost on restart, no persistence |
 | SSE vs WebSocket | Simpler, HTTP-compatible | One-way only |
