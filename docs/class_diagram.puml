@@ -1,10 +1,11 @@
 @startuml class_diagram
 !theme plain
-title Code Executor Sandbox - Class Diagram
-
+title Code Executor Sandbox - Class Diagram (Docker Required)
 skinparam classAttributeIconSize 0
+skinparam noteBackgroundColor #FFFFCC
+skinparam noteBorderColor #999999
 
-' Enums
+' ==================== ENUMS ====================
 enum TaskStatus {
     PENDING
     RUNNING
@@ -14,91 +15,215 @@ enum TaskStatus {
     KILLED
 }
 
-' Data classes
-class TaskResult {
-    +task_id: str
-    +status: TaskStatus
-    +stdout: str
-    +stderr: str
-    +exit_code: Optional[int]
-    +created_at: datetime
-    +started_at: Optional[datetime]
-    +finished_at: Optional[datetime]
-    +error_message: Optional[str]
+' ==================== DATA MODELS ====================
+package "Models (models.py)" #Lavender {
+    class Task {
+        + task_id: str
+        + code: str
+        + status: TaskStatus
+        + stdout: str
+        + stderr: str
+        + exit_code: int
+        + error_message: str
+        + created_at: datetime
+        + started_at: datetime
+        + finished_at: datetime
+        --
+        + to_dict(): dict
+    }
 }
 
-' Main executor class
-class CodeExecutor {
-    -timeout: int
-    -max_memory: int
-    -max_output_size: int
-    -recursion_limit: int
-    -tasks: dict[str, TaskResult]
-    -processes: dict[str, Process]
-    -output_buffers: dict[str, list[str]]
-    --
-    +create_task(code: str): str
-    +get_task(task_id: str): Optional[TaskResult]
-    +get_output_buffer(task_id: str): list[str]
-    +execute(task_id: str, code: str): TaskResult
-    +kill_task(task_id: str): bool
-    -_validate_code(code: str): tuple[bool, Optional[str]]
+' ==================== CONFIGURATION ====================
+package "Configuration (config.py)" #Wheat {
+    class Config {
+        + executor: ExecutorConfig
+        + security: SecurityConfig
+        + docker: DockerConfig
+        + server: ServerConfig
+        + rate_limit: RateLimitConfig
+    }
+
+    class ExecutorConfig {
+        + timeout: int = 10
+        + max_memory: int = 128
+        + max_output_size: int = 1048576
+        + max_code_size: int = 100000
+        + recursion_limit: int = 100
+        + max_concurrent_tasks: int = 10
+    }
+
+    class DockerConfig {
+        + image: str = "python-sandbox:latest"
+        + network: str = "none"
+        + memory_limit: str = "128m"
+        + cpu_limit: float = 1.0
+        + pids_limit: int = 50
+        + read_only: bool = True
+        + user: str = "65534:65534"
+    }
+
+    class SecurityConfig {
+        + blocked_modules: List[str]
+        + allowed_modules: List[str]
+    }
+
+    class RateLimitConfig {
+        + enabled: bool = True
+        + requests_per_minute: int = 60
+        + burst_size: int = 10
+    }
+
+    class ServerConfig {
+        + host: str = "0.0.0.0"
+        + port: int = 8000
+        + debug: bool = False
+        + log_level: str = "INFO"
+    }
+
+    Config *-- ExecutorConfig
+    Config *-- DockerConfig
+    Config *-- SecurityConfig
+    Config *-- RateLimitConfig
+    Config *-- ServerConfig
 }
 
-' Pydantic models
-class ExecuteRequest <<Pydantic>> {
-    +code: str
+' ==================== STORAGE ====================
+package "Storage (storage/)" #LightYellow {
+    abstract class TaskStorage {
+        {abstract} + create(task): Task
+        {abstract} + get(task_id): Task
+        {abstract} + update(task): Task
+        {abstract} + delete(task_id): bool
+        {abstract} + list_all(limit): List[Task]
+        {abstract} + get_output_buffer(task_id): List[str]
+        {abstract} + append_output(task_id, line): void
+    }
+
+    class MemoryStorage {
+        - _tasks: Dict[str, Task]
+        - _output_buffers: Dict[str, List[str]]
+        --
+        + create(task): Task
+        + get(task_id): Task
+        + update(task): Task
+        + delete(task_id): bool
+        + list_all(limit): List[Task]
+        + get_output_buffer(task_id): List[str]
+        + append_output(task_id, line): void
+    }
+
+    TaskStorage <|-- MemoryStorage
 }
 
-class ExecuteResponse <<Pydantic>> {
-    +task_id: str
+' ==================== DOCKER EXECUTOR ====================
+package "Executor (executor/)" #LightGreen {
+    class DockerRunner {
+        - config: DockerConfig
+        - _container_names: Dict[str, str]
+        --
+        + build_docker_command(task_id, script_path): List[str]
+        + kill_container(task_id): bool
+        + cleanup_task(task_id): void
+        - _get_seccomp_path(): str
+    }
+
+    class SandboxExecutor {
+        - storage: TaskStorage
+        - config: Config
+        - docker_runner: DockerRunner
+        - _processes: Dict[str, Process]
+        - _semaphore: Semaphore
+        --
+        + create_task(code): Task
+        + get_task(task_id): Task
+        + execute(task_id, wait_for_slot): Task
+        + kill_task(task_id): bool
+        + get_output_buffer(task_id): List[str]
+        + get_running_task_count(): int
+        + get_available_slots(): int
+        --
+        - _validate_code(code): Tuple[bool, str]
+        - _execute_with_docker(task_id, task): Task
+    }
+
+    class DockerExecutionError {
+        + message: str
+    }
+
+    SandboxExecutor --> DockerRunner
+    SandboxExecutor ..> DockerExecutionError : raises
 }
 
-class TaskResponse <<Pydantic>> {
-    +task_id: str
-    +status: TaskStatus
-    +stdout: str
-    +stderr: str
-    +exit_code: Optional[int]
-    +error_message: Optional[str]
-    +created_at: str
-    +started_at: Optional[str]
-    +finished_at: Optional[str]
+' ==================== API ====================
+package "API (api/routes.py)" #LightBlue {
+    class RateLimiter {
+        - requests_per_minute: int
+        - burst_size: int
+        - tokens: Dict[str, float]
+        - last_update: Dict[str, float]
+        --
+        + is_allowed(client_id): Tuple[bool, dict]
+    }
+
+    class RateLimitMiddleware {
+        - rate_limiter: RateLimiter
+        - enabled: bool
+        --
+        + dispatch(request, call_next): Response
+    }
+
+    class ExecuteRequest {
+        + code: str
+    }
+
+    class ExecuteResponse {
+        + task_id: str
+    }
+
+    class TaskResponse {
+        + task_id: str
+        + status: TaskStatus
+        + stdout: str
+        + stderr: str
+        + exit_code: int
+        + error_message: str
+    }
+
+    RateLimitMiddleware --> RateLimiter
 }
 
-' FastAPI app
-class FastAPIApp <<FastAPI>> {
-    +executor: CodeExecutor
-    --
-    +execute_code(request: ExecuteRequest): ExecuteResponse
-    +get_task(task_id: str): TaskResponse
-    +stream_task_output(task_id: str): StreamingResponse
-    +kill_task(task_id: str): dict
-    +health_check(): dict
-}
+' ==================== RELATIONSHIPS ====================
+SandboxExecutor --> TaskStorage
+SandboxExecutor --> Config
+SandboxExecutor --> Task
+Task --> TaskStatus
+MemoryStorage --> Task
 
-' Relationships
-TaskResult --> TaskStatus : uses
-CodeExecutor "1" *-- "0..*" TaskResult : manages
-CodeExecutor --> TaskStatus : updates
-FastAPIApp "1" *-- "1" CodeExecutor : uses
-FastAPIApp --> ExecuteRequest : receives
-FastAPIApp --> ExecuteResponse : returns
-FastAPIApp --> TaskResponse : returns
-
-note right of CodeExecutor
-  **Security Features:**
-  - Code validation before execution
-  - Subprocess isolation
-  - Resource limits enforcement
-  - Module blocklist
-  - Restricted builtins
+note right of DockerRunner
+  **Docker Security**
+  --network=none
+  --read-only
+  --cap-drop=ALL
+  --memory=128m
+  --pids-limit=50
+  --user=nobody
+  seccomp profile
 end note
 
-note bottom of TaskResult
-  **Status Transitions:**
-  PENDING -> RUNNING
-  RUNNING -> COMPLETED | FAILED | TIMEOUT | KILLED
+note right of SandboxExecutor
+  **Responsibilities**
+  1. Task lifecycle
+  2. Code validation
+  3. Docker execution
+  4. Concurrency control
+  5. Output streaming
+end note
+
+note bottom of SecurityConfig
+  **Allowed Modules (Whitelist)**
+  math, json, datetime,
+  collections, itertools,
+  functools, random, re...
 end note
 
 @enduml

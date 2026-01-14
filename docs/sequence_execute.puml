@@ -1,90 +1,140 @@
 @startuml sequence_execute
 !theme plain
-title Code Execution Flow
-
+title Code Execution Flow (Docker Required)
 skinparam responseMessageBelowArrow true
-skinparam sequenceMessageAlign center
+skinparam noteBackgroundColor #FFFFCC
+skinparam noteBorderColor #999999
 
-actor Client
-participant "FastAPI\n/execute" as API
-participant "CodeExecutor" as Executor
-participant "Validator" as Validator
-participant "Subprocess\n(Sandbox)" as Sandbox
-database "Task Store" as Store
+actor "Client" as Client
+participant "RateLimiter" as RateLimiter
+participant "FastAPI" as API
+participant "SandboxExecutor" as Executor
+participant "DockerRunner" as Docker
+participant "TaskStorage" as Store
+participant "Container" as Container
 
-== Submit Code ==
+== Phase 1: Rate Limiting ==
 
-Client -> API : POST /execute\n{"code": "print('hello')"}
-activate API
+Client -> RateLimiter : HTTP Request
 
-API -> Executor : create_task(code)
-activate Executor
-Executor -> Store : Store TaskResult\n(status=PENDING)
-Executor --> API : task_id
-deactivate Executor
-
-API -> Executor : execute(task_id, code)\n[background task]
-activate Executor #LightGray
-
-API --> Client : {"task_id": "abc123"}
-deactivate API
-
-== Execute in Background ==
-
-Executor -> Store : Update status\n(RUNNING)
-Executor -> Validator : _validate_code(code)
-activate Validator
-
-alt Syntax Error
-    Validator --> Executor : (False, "SyntaxError...")
-    Executor -> Store : Update status\n(FAILED)
-else Valid Code
-    Validator --> Executor : (True, None)
-    deactivate Validator
-
-    Executor -> Sandbox : create_subprocess\n(python -u wrapper.py)
-    activate Sandbox
-
-    note over Sandbox
-        **Sandbox Setup:**
-        1. Set resource limits
-        2. Set recursion limit
-        3. Configure restricted builtins
-        4. Block dangerous imports
-        5. Execute user code
-    end note
-
-    loop Read Output
-        Sandbox --> Executor : stdout/stderr lines
-        Executor -> Store : Append to output buffer
-    end
-
-    alt Success (exit_code=0)
-        Sandbox --> Executor : exit_code=0
-        Executor -> Store : Update status\n(COMPLETED)
-    else Timeout
-        Sandbox --> Executor : exit_code=137/-24
-        Executor -> Store : Update status\n(TIMEOUT)
-    else Error
-        Sandbox --> Executor : exit_code!=0
-        Executor -> Store : Update status\n(FAILED)
-    end
-
-    deactivate Sandbox
+alt Rate Limit Exceeded
+    RateLimiter --> Client : 429 Too Many Requests
+else Rate OK
+    RateLimiter --> API : Forward
 end
 
-Executor -> Executor : Cleanup temp file
-deactivate Executor
+== Phase 2: Submit Code ==
 
-== Query Result ==
+Client -> API : POST /execute
+
+note right of API
+  Pydantic validation:
+  code: str (1-100KB)
+end note
+
+API -> Executor : create_task(code)
+Executor -> Store : create(Task)
+Store --> Executor : Task
+
+API -> Executor : execute(task_id)
+API --> Client : {"task_id": "abc123"}
+
+note right of Client
+  Async response.
+  Use GET /tasks/{id}
+  or SSE to track.
+end note
+
+== Phase 3: Acquire Semaphore ==
+
+Executor -> Executor : await semaphore.acquire()
+
+note right of Executor
+  Max 10 concurrent tasks.
+  Wait or fail if full.
+end note
+
+== Phase 4: Code Validation ==
+
+Executor -> Store : update(status=RUNNING)
+Executor -> Executor : _validate_code(code)
+
+note right of Executor
+  1. Empty check
+  2. UTF-8 encoding
+  3. Syntax (compile)
+  4. Pattern scan
+end note
+
+alt Validation Failed
+    Executor -> Store : update(status=FAILED)
+else OK
+end
+
+== Phase 5: Generate Docker Wrapper ==
+
+Executor -> Executor : generate_docker_wrapper()
+
+note right of Executor
+  Wrapper includes:
+  - Resource limits
+  - Restricted builtins
+  - Module whitelist
+  - Attribute blocking
+end note
+
+== Phase 6: Docker Execution ==
+
+Executor -> Docker : build_docker_command()
+
+note right of Docker
+  docker run --rm
+  --network=none
+  --read-only
+  --cap-drop=ALL
+  --memory=128m
+  --pids-limit=50
+  --user=nobody
+  --security-opt seccomp=...
+end note
+
+Docker -> Container : docker run
+activate Container
+
+Container --> Executor : stdout/stderr (streaming)
+Executor -> Store : append_output()
+
+Container --> Docker : exit code
+deactivate Container
+
+== Phase 7: Process Result ==
+
+alt exit_code == 0
+    Executor -> Store : status=COMPLETED
+else exit_code == 137
+    Executor -> Store : status=TIMEOUT
+else exit_code != 0
+    Executor -> Store : status=FAILED
+end
+
+== Phase 8: Cleanup ==
+
+Executor -> Docker : cleanup_task()
+Executor -> Executor : semaphore.release()
+Executor -> Store : update(finished_at)
+
+== Phase 9: Query Result ==
 
 Client -> API : GET /tasks/{task_id}
-activate API
-API -> Executor : get_task(task_id)
-Executor -> Store : Fetch TaskResult
-Store --> Executor : TaskResult
-Executor --> API : TaskResult
+API -> Store : get(task_id)
+Store --> API : Task
 API --> Client : TaskResponse JSON
-deactivate API
+
+note right of Client
+  {"task_id": "abc123",
+   "status": "completed",
+   "stdout": "...",
+   "exit_code": 0}
+end note
 
 @enduml

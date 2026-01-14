@@ -1,93 +1,173 @@
 @startuml architecture
 !theme plain
-title Code Executor Sandbox - System Architecture
-
+title Code Executor Sandbox - System Architecture (Docker Required)
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
+skinparam noteBackgroundColor #FFFFCC
+skinparam noteBorderColor #999999
 
-' External actors
-actor "Client" as client
+' ==================== EXTERNAL ====================
+actor "Client\n(HTTP)" as client
 
-' Main system boundary
-package "Code Executor Sandbox" {
+' ==================== HOST SYSTEM ====================
+package "Host Server" as host {
 
-    ' API Layer
-    package "API Layer (FastAPI)" {
+    ' -------------------- API Layer --------------------
+    package "API Layer (FastAPI)" as api_layer #LightBlue {
         component "POST /execute" as api_execute
         component "GET /tasks/{id}" as api_get
         component "GET /tasks/{id}/stream" as api_stream
         component "DELETE /tasks/{id}" as api_kill
         component "GET /health" as api_health
+        component "GET /info" as api_info
     }
 
-    ' Core Layer
-    package "Core Layer" {
-        component "CodeExecutor" as executor {
-            component "Task Manager" as task_mgr
-            component "Output Buffer" as output_buf
-            component "Process Manager" as proc_mgr
-        }
-
-        component "Code Validator" as validator
+    ' -------------------- Middleware --------------------
+    package "Middleware" as middleware_layer #LightCyan {
+        component "RateLimiter" as rate_limiter
+        component "RateLimitMiddleware" as rate_middleware
     }
 
-    ' Execution Layer
-    package "Execution Layer (Subprocess)" {
-        component "Sandbox Wrapper" as sandbox {
-            component "Resource Limits" as res_limits
-            component "Restricted Builtins" as restricted
-            component "Module Blocklist" as blocklist
-        }
-
-        component "User Code" as user_code
+    ' -------------------- Core Layer --------------------
+    package "Core Layer" as core_layer #LightGreen {
+        component "SandboxExecutor" as executor
+        component "DockerRunner" as docker_runner
+        component "Semaphore" as semaphore
     }
 
-    ' Storage
-    database "In-Memory Store" as store {
-        storage "Tasks" as tasks
-        storage "Output Buffers" as buffers
+    ' -------------------- Configuration --------------------
+    package "Configuration" as config_pkg #Wheat {
+        component "ExecutorConfig" as exec_config
+        component "DockerConfig" as docker_config
+        component "SecurityConfig" as sec_config
+        component "RateLimitConfig" as rate_config
+        component "ServerConfig" as server_config
+    }
+
+    ' -------------------- Storage --------------------
+    package "Storage" as storage_layer #LightYellow {
+        interface "TaskStorage" as storage_interface
+        component "MemoryStorage" as memory_storage
+    }
+
+    ' -------------------- Data Models --------------------
+    package "Models" as models_pkg #Lavender {
+        component "Task" as task_model
+        component "TaskStatus" as status_enum
     }
 }
 
-' External resources
-cloud "Temp Files" as temp
+' ==================== DOCKER CONTAINER ====================
+package "Docker Container (per task)" as docker_container #LightCoral {
 
-' Relationships
-client --> api_execute : Submit code
-client --> api_get : Query result
-client --> api_stream : SSE stream
-client --> api_kill : Kill task
-client --> api_health : Health check
+    note as docker_security
+      **Container Security**
+      --network=none
+      --read-only
+      --cap-drop=ALL
+      --memory=128m
+      --pids-limit=50
+      --user=nobody
+      seccomp profile
+    end note
 
-api_execute --> executor : Create & execute task
-api_get --> task_mgr : Get task status
-api_stream --> output_buf : Stream output
-api_kill --> proc_mgr : Kill process
+    package "Python Sandbox (Layer 2)" as python_sandbox {
+        component "Restricted Builtins" as restricted
+        component "Module Whitelist" as whitelist
+        component "Attribute Blocking" as attr_block
+        component "Pattern Scanner" as pattern_scan
+        component "Resource Limits" as res_limits
+    }
 
-executor --> validator : Validate code
-executor --> sandbox : Execute in subprocess
-sandbox --> user_code : Run user code
+    component "User Code" as user_code
+}
 
-task_mgr --> tasks : CRUD operations
-output_buf --> buffers : Read/write
+' ==================== EXTERNAL RESOURCES ====================
+database "Temp Script\n(/tmp/*.py)" as temp_files
+database "seccomp-profile.json" as seccomp
+cloud "Dockerfile.sandbox" as dockerfile
 
-sandbox --> temp : Write wrapper script
-sandbox --> res_limits : Apply limits
-sandbox --> restricted : Filter builtins
-sandbox --> blocklist : Block imports
+' ==================== RELATIONSHIPS ====================
+client --> api_execute
+client --> api_get
+client --> api_stream
+client --> api_kill
 
-note right of res_limits
-  - CPU: 10s
-  - Memory: 128MB
-  - File size: 1MB
-  - Open files: 10
-  - Recursion: 100
+api_execute --> rate_middleware
+rate_middleware --> rate_limiter
+rate_middleware --> executor
+
+executor --> docker_runner
+executor --> semaphore
+executor --> storage_interface
+
+semaphore --> exec_config : max_concurrent_tasks
+
+docker_runner --> docker_container : docker run
+docker_runner --> temp_files : write script
+docker_runner --> seccomp : load profile
+
+storage_interface <|.. memory_storage
+memory_storage --> task_model
+
+python_sandbox --> user_code : exec()
+
+' Config relations
+docker_runner --> docker_config
+executor --> exec_config
+rate_limiter --> rate_config
+
+' ==================== NOTES ====================
+note right of docker_runner
+  **DockerRunner**
+  - Builds docker run command
+  - Manages container lifecycle
+  - Handles container kill
+  - Uses seccomp profile
 end note
 
-note right of blocklist
-  Blocked modules:
-  os, subprocess, socket,
-  pickle, ctypes, etc.
+note right of rate_limiter
+  **Token Bucket**
+  60 req/min per IP
+  Burst: 10 requests
+  Returns 429 + Retry-After
+end note
+
+note bottom of whitelist
+  **Allowed Modules**
+  math, json, datetime,
+  collections, itertools,
+  functools, random, re,
+  string, copy, enum...
+end note
+
+note bottom of attr_block
+  **Blocked Attributes**
+  __class__, __bases__,
+  __mro__, __subclasses__,
+  __globals__, __code__...
+  Prevents sandbox escape
+end note
+
+note right of pattern_scan
+  **Pattern Detection**
+  Scans for dangerous
+  patterns before exec:
+  __class__, __bases__...
+end note
+
+note bottom of memory_storage
+  **In-Memory Storage**
+  Fast, no persistence
+  Task + Output buffers
+end note
+
+note right of semaphore
+  **Concurrency Control**
+  asyncio.Semaphore
+  max_concurrent_tasks=10
+  Prevents server overload
+  Tasks wait or fail if full
 end note
 
 @enduml
