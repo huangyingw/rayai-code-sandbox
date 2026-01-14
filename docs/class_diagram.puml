@@ -1,0 +1,104 @@
+@startuml class_diagram
+!theme plain
+title Code Executor Sandbox - Class Diagram
+
+skinparam classAttributeIconSize 0
+
+' Enums
+enum TaskStatus {
+    PENDING
+    RUNNING
+    COMPLETED
+    FAILED
+    TIMEOUT
+    KILLED
+}
+
+' Data classes
+class TaskResult {
+    +task_id: str
+    +status: TaskStatus
+    +stdout: str
+    +stderr: str
+    +exit_code: Optional[int]
+    +created_at: datetime
+    +started_at: Optional[datetime]
+    +finished_at: Optional[datetime]
+    +error_message: Optional[str]
+}
+
+' Main executor class
+class CodeExecutor {
+    -timeout: int
+    -max_memory: int
+    -max_output_size: int
+    -recursion_limit: int
+    -tasks: dict[str, TaskResult]
+    -processes: dict[str, Process]
+    -output_buffers: dict[str, list[str]]
+    --
+    +create_task(code: str): str
+    +get_task(task_id: str): Optional[TaskResult]
+    +get_output_buffer(task_id: str): list[str]
+    +execute(task_id: str, code: str): TaskResult
+    +kill_task(task_id: str): bool
+    -_validate_code(code: str): tuple[bool, Optional[str]]
+}
+
+' Pydantic models
+class ExecuteRequest <<Pydantic>> {
+    +code: str
+}
+
+class ExecuteResponse <<Pydantic>> {
+    +task_id: str
+}
+
+class TaskResponse <<Pydantic>> {
+    +task_id: str
+    +status: TaskStatus
+    +stdout: str
+    +stderr: str
+    +exit_code: Optional[int]
+    +error_message: Optional[str]
+    +created_at: str
+    +started_at: Optional[str]
+    +finished_at: Optional[str]
+}
+
+' FastAPI app
+class FastAPIApp <<FastAPI>> {
+    +executor: CodeExecutor
+    --
+    +execute_code(request: ExecuteRequest): ExecuteResponse
+    +get_task(task_id: str): TaskResponse
+    +stream_task_output(task_id: str): StreamingResponse
+    +kill_task(task_id: str): dict
+    +health_check(): dict
+}
+
+' Relationships
+TaskResult --> TaskStatus : uses
+CodeExecutor "1" *-- "0..*" TaskResult : manages
+CodeExecutor --> TaskStatus : updates
+FastAPIApp "1" *-- "1" CodeExecutor : uses
+FastAPIApp --> ExecuteRequest : receives
+FastAPIApp --> ExecuteResponse : returns
+FastAPIApp --> TaskResponse : returns
+
+note right of CodeExecutor
+  **Security Features:**
+  - Code validation before execution
+  - Subprocess isolation
+  - Resource limits enforcement
+  - Module blocklist
+  - Restricted builtins
+end note
+
+note bottom of TaskResult
+  **Status Transitions:**
+  PENDING -> RUNNING
+  RUNNING -> COMPLETED | FAILED | TIMEOUT | KILLED
+end note
+
+@enduml
