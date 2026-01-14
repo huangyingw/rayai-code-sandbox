@@ -103,6 +103,8 @@ _safe_builtins = {{
     'ArithmeticError': ArithmeticError, 'LookupError': LookupError,
     'AssertionError': AssertionError, 'NotImplementedError': NotImplementedError,
     'NameError': NameError, 'ImportError': ImportError,
+    # Required for class definitions
+    '__build_class__': __build_class__,
 }}
 
 # Create restricted __builtins__

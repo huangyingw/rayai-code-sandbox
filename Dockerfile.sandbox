@@ -20,15 +20,14 @@ RUN apt-get update \
     # Remove compilers and development tools if present
     && apt-get purge -y --auto-remove gcc g++ make 2>/dev/null || true
 
-# Security: Remove setuid/setgid binaries
-RUN find / -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
-
-# Security: Remove shells (except for sh which Python may need)
-RUN rm -f /bin/bash /bin/dash /bin/zsh 2>/dev/null || true
-
 # Security: Create read-only workspace
 WORKDIR /sandbox
 RUN mkdir -p /home/sandbox && chown -R sandbox:sandbox /sandbox /home/sandbox
+
+# Security: Remove setuid/setgid binaries and shells (must be last RUN as root)
+# Note: Keep /bin/sh as it's needed for Docker HEALTHCHECK
+RUN find / -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true \
+    && rm -f /bin/bash /bin/zsh 2>/dev/null || true
 
 # Security: Switch to non-root user
 USER sandbox

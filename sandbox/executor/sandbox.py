@@ -192,6 +192,8 @@ class SandboxExecutor:
         ) as f:
             f.write(wrapper_code)
             temp_file = f.name
+        # Make file readable by Docker's nobody user (65534)
+        os.chmod(temp_file, 0o644)
 
         try:
             # Check if Docker is available and accessible

@@ -102,7 +102,19 @@
         "lstat",
         "stat",
         "statx",
-        "rseq"
+        "rseq",
+        "fstatfs",
+        "statfs",
+        "openat2",
+        "fsmount",
+        "fsopen",
+        "fsconfig",
+        "fspick",
+        "move_mount",
+        "open_tree",
+        "close_range",
+        "pidfd_getfd",
+        "pidfd_open"
       ],
       "action": "SCMP_ACT_ALLOW"
     },
