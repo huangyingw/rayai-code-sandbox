@@ -1,0 +1,52 @@
+# Challenge - Build a Code Executor Sandbox
+
+## The Problem
+
+Build an HTTP API that executes arbitrary Python code submitted by users. The code should
+run asynchronously with real-time streaming output.
+
+## Requirements
+
+### API Design:
+
+```python
+POST /execute
+{
+  "code": "print('hello world')"
+}
+→ {"task_id": "abc123"}
+
+GET /tasks/{task_id}/stream  # Stream stdout as task runs
+GET /tasks/{task_id}         # Get final result + status
+```
+
+Your executor will run **untrusted code from the internet**. Users may submit code that is buggy,
+inefficient, or intentionally malicious.
+
+Your job is to make the system as safe and robust as possible within 2 hours.
+
+### What we'd like to see:
+
+- **Correctness**: Does it execute valid code properly?
+- **Robustness**: How does it handle problematic code?
+- **Security**: What protections exist against malicious code?
+- **Design**: Code quality, architecture decisions, trade-offs
+
+## Submission
+
+Please provide:
+
+1. **Working code** with setup instructions (README)
+2. **Your approach** and any notes you want to share
+3. **Test examples** - Show us 2-3 examples of problematic code you tested against and how
+   your system handles them
+
+## Note
+
+We don't expect a production-grade sandbox in 2 hours. We want to see your thought
+process, priorities, and how you approach a hard problem with limited time.
+
+You should treat this as any task you would at work and feel free to use any tools, libraries you
+may use on a day-to-day basis.
+
+Good luck! We're excited to see your submission.
