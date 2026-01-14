@@ -151,6 +151,11 @@ except Exception as e:
 '''
 
 
+class ConcurrencyLimitExceeded(Exception):
+    """Raised when the maximum number of concurrent tasks is exceeded."""
+    pass
+
+
 class CodeExecutor:
     """Executes Python code in a sandboxed environment."""
 
@@ -160,14 +165,18 @@ class CodeExecutor:
         max_memory: int = 128,  # MB
         max_output_size: int = 1024 * 1024,  # 1MB
         max_recursion_depth: int = 100,  # Recursion limit (lower than default 1000)
+        max_concurrent_tasks: int = 10,  # Maximum concurrent running tasks
     ):
         self.timeout = timeout
         self.max_memory = max_memory
         self.max_output_size = max_output_size
         self.max_recursion_depth = max_recursion_depth
+        self.max_concurrent_tasks = max_concurrent_tasks
         self.tasks: dict[str, TaskResult] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.output_buffers: dict[str, list[str]] = {}
+        # Semaphore to limit concurrent executions
+        self._semaphore = asyncio.Semaphore(max_concurrent_tasks)
 
     def create_task(self, code: str) -> str:
         """Create a new task and return its ID."""
@@ -186,6 +195,14 @@ class CodeExecutor:
     def get_output_buffer(self, task_id: str) -> list[str]:
         """Get the output buffer for streaming."""
         return self.output_buffers.get(task_id, [])
+
+    def get_running_task_count(self) -> int:
+        """Get the number of currently running tasks."""
+        return len(self.processes)
+
+    def get_available_slots(self) -> int:
+        """Get the number of available execution slots."""
+        return self.max_concurrent_tasks - self.get_running_task_count()
 
     def _validate_code(self, code: str) -> tuple[bool, Optional[str]]:
         """Validate user code before execution.
@@ -215,12 +232,40 @@ class CodeExecutor:
 
         return True, None
 
-    async def execute(self, task_id: str, code: str) -> TaskResult:
-        """Execute code and update task result."""
+    async def execute(self, task_id: str, code: str, wait_for_slot: bool = True) -> TaskResult:
+        """Execute code and update task result.
+
+        Args:
+            task_id: The task ID to execute
+            code: The Python code to execute
+            wait_for_slot: If True, wait for an available slot. If False, fail immediately
+                          when no slots are available.
+        """
         task = self.tasks.get(task_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
+        # Try to acquire semaphore for concurrent execution limit
+        if wait_for_slot:
+            await self._semaphore.acquire()
+        else:
+            if not self._semaphore.locked() or self._semaphore._value > 0:
+                await self._semaphore.acquire()
+            else:
+                task.status = TaskStatus.FAILED
+                task.error_message = f"Server busy: maximum concurrent tasks ({self.max_concurrent_tasks}) reached"
+                task.stderr = task.error_message + "\n"
+                task.exit_code = 1
+                task.finished_at = datetime.now()
+                return task
+
+        try:
+            return await self._execute_with_semaphore(task_id, code, task)
+        finally:
+            self._semaphore.release()
+
+    async def _execute_with_semaphore(self, task_id: str, code: str, task: TaskResult) -> TaskResult:
+        """Internal execution method called after acquiring semaphore."""
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
 

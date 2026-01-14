@@ -146,6 +146,10 @@ Configuration via environment variables:
 | `EXECUTOR_TIMEOUT` | 10 | Max execution time (seconds) |
 | `EXECUTOR_MAX_MEMORY` | 128 | Max memory (MB) |
 | `EXECUTOR_MAX_OUTPUT` | 1048576 | Max output size (bytes) |
+| `EXECUTOR_MAX_CONCURRENT` | 10 | Max concurrent running tasks |
+| `RATE_LIMIT_ENABLED` | true | Enable rate limiting |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | 60 | Max requests per minute per IP |
+| `RATE_LIMIT_BURST_SIZE` | 10 | Allow burst of requests |
 | `SERVER_HOST` | 0.0.0.0 | Server bind host |
 | `SERVER_PORT` | 8000 | Server bind port |
 | `LOG_LEVEL` | INFO | Logging level |
@@ -189,14 +193,28 @@ Configuration via environment variables:
 | In-memory task store | Simple, fast | Lost on restart, no persistence |
 | SSE vs WebSocket | Simpler, HTTP-compatible | One-way only |
 
+### Robustness Features
+
+1. **Concurrency Limiting**: Maximum 10 concurrent tasks (configurable)
+   - Uses asyncio Semaphore for efficient queueing
+   - Tasks wait for available slots or fail immediately
+
+2. **Rate Limiting**: Token bucket algorithm per IP
+   - 60 requests/minute default (configurable)
+   - Burst allowance for legitimate traffic spikes
+   - Returns `429 Too Many Requests` with `Retry-After` header
+
+3. **Monitoring Endpoints**:
+   - `GET /health` - Quick health check with concurrency status
+   - `GET /status` - Detailed system status
+
 ### What's NOT Implemented (would need more time)
 
 1. **Docker/container isolation** - Would provide better security through namespaces, cgroups
 2. **Persistent task storage** - Database for task history
-3. **Rate limiting** - Prevent abuse
-4. **Authentication** - Control who can execute code
-5. **Network isolation** - Block network at OS level
-6. **Seccomp/AppArmor** - Syscall filtering
+3. **Authentication** - Control who can execute code
+4. **Network isolation** - Block network at OS level
+5. **Seccomp/AppArmor** - Syscall filtering
 
 ## Test Examples
 

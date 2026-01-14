@@ -17,6 +17,15 @@ class ExecutorConfig:
     max_output_size: int = 1024 * 1024  # 1MB
     max_code_size: int = 100000  # characters
     recursion_limit: int = 100  # max recursion depth to prevent stack overflow
+    max_concurrent_tasks: int = 10  # max number of tasks running simultaneously
+
+
+@dataclass
+class RateLimitConfig:
+    """Rate limiting configuration."""
+    enabled: bool = True
+    requests_per_minute: int = 60  # max requests per minute per IP
+    burst_size: int = 10  # allow burst of requests
 
 
 @dataclass
@@ -50,6 +59,7 @@ class Config:
     executor: ExecutorConfig = field(default_factory=ExecutorConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
 
 
 def load_config() -> Config:
@@ -65,6 +75,16 @@ def load_config() -> Config:
         config.executor.max_output_size = int(max_output)
     if recursion_limit := os.getenv("EXECUTOR_RECURSION_LIMIT"):
         config.executor.recursion_limit = int(recursion_limit)
+    if max_concurrent := os.getenv("EXECUTOR_MAX_CONCURRENT"):
+        config.executor.max_concurrent_tasks = int(max_concurrent)
+
+    # Rate limit settings
+    if rate_limit_enabled := os.getenv("RATE_LIMIT_ENABLED"):
+        config.rate_limit.enabled = rate_limit_enabled.lower() in ("true", "1", "yes")
+    if requests_per_minute := os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE"):
+        config.rate_limit.requests_per_minute = int(requests_per_minute)
+    if burst_size := os.getenv("RATE_LIMIT_BURST_SIZE"):
+        config.rate_limit.burst_size = int(burst_size)
 
     # Server settings
     if host := os.getenv("SERVER_HOST"):

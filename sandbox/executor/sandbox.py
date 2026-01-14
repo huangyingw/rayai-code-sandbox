@@ -22,6 +22,11 @@ from .wrapper import generate_wrapper
 logger = logging.getLogger(__name__)
 
 
+class ConcurrencyLimitExceeded(Exception):
+    """Raised when the maximum number of concurrent tasks is exceeded."""
+    pass
+
+
 class SandboxExecutor:
     """Executes Python code in a sandboxed environment."""
 
@@ -40,6 +45,16 @@ class SandboxExecutor:
         self.storage = storage or MemoryStorage()
         self.config = config or default_config
         self._processes: dict[str, asyncio.subprocess.Process] = {}
+        # Semaphore to limit concurrent executions
+        self._semaphore = asyncio.Semaphore(self.config.executor.max_concurrent_tasks)
+
+    def get_running_task_count(self) -> int:
+        """Get the number of currently running tasks."""
+        return len(self._processes)
+
+    def get_available_slots(self) -> int:
+        """Get the number of available execution slots."""
+        return self.config.executor.max_concurrent_tasks - self.get_running_task_count()
 
     async def create_task(self, code: str) -> Task:
         """Create a new task and return it."""
@@ -89,12 +104,41 @@ class SandboxExecutor:
 
         return True, None
 
-    async def execute(self, task_id: str) -> Task:
-        """Execute the task's code in a sandbox."""
+    async def execute(self, task_id: str, wait_for_slot: bool = True) -> Task:
+        """Execute the task's code in a sandbox.
+
+        Args:
+            task_id: The task ID to execute.
+            wait_for_slot: If True, wait for an available slot. If False, fail immediately
+                          when no slots are available.
+        """
         task = await self.storage.get(task_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
+        # Try to acquire semaphore for concurrent execution limit
+        if wait_for_slot:
+            await self._semaphore.acquire()
+        else:
+            # Try to acquire without waiting
+            if self._semaphore.locked() and self._semaphore._value == 0:
+                task.status = TaskStatus.FAILED
+                task.error_message = f"Server busy: maximum concurrent tasks ({self.config.executor.max_concurrent_tasks}) reached"
+                task.stderr = task.error_message + "\n"
+                task.exit_code = 1
+                task.finished_at = datetime.now()
+                await self.storage.update(task)
+                logger.warning(f"Task {task_id} rejected: concurrency limit reached")
+                return task
+            await self._semaphore.acquire()
+
+        try:
+            return await self._execute_internal(task_id, task)
+        finally:
+            self._semaphore.release()
+
+    async def _execute_internal(self, task_id: str, task: Task) -> Task:
+        """Internal execution method called after acquiring semaphore."""
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
         await self.storage.update(task)

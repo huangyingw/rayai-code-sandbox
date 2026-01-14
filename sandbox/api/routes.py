@@ -4,11 +4,14 @@ FastAPI routes for the code executor API.
 
 import asyncio
 import logging
+import time
+from collections import defaultdict
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..config import config
 from ..models import TaskStatus
@@ -16,6 +19,94 @@ from ..executor import SandboxExecutor
 
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter using token bucket algorithm."""
+
+    def __init__(self, requests_per_minute: int = 60, burst_size: int = 10):
+        self.requests_per_minute = requests_per_minute
+        self.burst_size = burst_size
+        self.tokens: dict[str, float] = defaultdict(lambda: float(burst_size))
+        self.last_update: dict[str, float] = defaultdict(time.time)
+        # Rate at which tokens are added (tokens per second)
+        self.rate = requests_per_minute / 60.0
+
+    def _refill_tokens(self, client_id: str) -> None:
+        """Refill tokens based on elapsed time."""
+        now = time.time()
+        elapsed = now - self.last_update[client_id]
+        self.last_update[client_id] = now
+
+        # Add tokens based on elapsed time
+        self.tokens[client_id] = min(
+            self.burst_size,
+            self.tokens[client_id] + elapsed * self.rate
+        )
+
+    def is_allowed(self, client_id: str) -> tuple[bool, dict]:
+        """Check if request is allowed and consume a token if so.
+
+        Returns:
+            (is_allowed, rate_limit_info)
+        """
+        self._refill_tokens(client_id)
+
+        info = {
+            "limit": self.requests_per_minute,
+            "remaining": int(self.tokens[client_id]),
+            "reset": int(self.burst_size / self.rate),
+        }
+
+        if self.tokens[client_id] >= 1:
+            self.tokens[client_id] -= 1
+            info["remaining"] = int(self.tokens[client_id])
+            return True, info
+        else:
+            return False, info
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Middleware to enforce rate limiting on API requests."""
+
+    def __init__(self, app, rate_limiter: RateLimiter, enabled: bool = True):
+        super().__init__(app)
+        self.rate_limiter = rate_limiter
+        self.enabled = enabled
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting if disabled or for health check
+        if not self.enabled or request.url.path == "/health":
+            return await call_next(request)
+
+        # Get client identifier (IP address)
+        client_id = request.client.host if request.client else "unknown"
+
+        # Check rate limit
+        is_allowed, info = self.rate_limiter.is_allowed(client_id)
+
+        if not is_allowed:
+            logger.warning(f"Rate limit exceeded for client {client_id}")
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Too many requests. Please slow down.",
+                    "retry_after": info["reset"],
+                },
+                headers={
+                    "X-RateLimit-Limit": str(info["limit"]),
+                    "X-RateLimit-Remaining": str(info["remaining"]),
+                    "X-RateLimit-Reset": str(info["reset"]),
+                    "Retry-After": str(info["reset"]),
+                }
+            )
+
+        # Process request and add rate limit headers to response
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(info["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
+        response.headers["X-RateLimit-Reset"] = str(info["reset"])
+        return response
 
 
 # Request/Response models
@@ -61,6 +152,17 @@ def create_app(executor: Optional[SandboxExecutor] = None) -> FastAPI:
         title="Code Executor Sandbox",
         description="Execute Python code safely with streaming output",
         version="1.0.0",
+    )
+
+    # Add rate limiting middleware
+    rate_limiter = RateLimiter(
+        requests_per_minute=config.rate_limit.requests_per_minute,
+        burst_size=config.rate_limit.burst_size,
+    )
+    app.add_middleware(
+        RateLimitMiddleware,
+        rate_limiter=rate_limiter,
+        enabled=config.rate_limit.enabled,
     )
 
     # Use provided executor or create default
@@ -169,7 +271,36 @@ def create_app(executor: Optional[SandboxExecutor] = None) -> FastAPI:
 
     @app.get("/health")
     async def health_check():
-        """Health check endpoint."""
-        return {"status": "healthy"}
+        """Health check endpoint with system status."""
+        return {
+            "status": "healthy",
+            "concurrent_tasks": {
+                "running": _executor.get_running_task_count(),
+                "max": config.executor.max_concurrent_tasks,
+                "available": config.executor.max_concurrent_tasks - _executor.get_running_task_count(),
+            },
+            "rate_limit": {
+                "enabled": config.rate_limit.enabled,
+                "requests_per_minute": config.rate_limit.requests_per_minute,
+            }
+        }
+
+    @app.get("/status")
+    async def system_status():
+        """Detailed system status endpoint."""
+        return {
+            "executor": {
+                "running_tasks": _executor.get_running_task_count(),
+                "max_concurrent_tasks": config.executor.max_concurrent_tasks,
+                "available_slots": config.executor.max_concurrent_tasks - _executor.get_running_task_count(),
+                "timeout": config.executor.timeout,
+                "max_memory_mb": config.executor.max_memory,
+            },
+            "rate_limit": {
+                "enabled": config.rate_limit.enabled,
+                "requests_per_minute": config.rate_limit.requests_per_minute,
+                "burst_size": config.rate_limit.burst_size,
+            }
+        }
 
     return app
