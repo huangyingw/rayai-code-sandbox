@@ -8,6 +8,8 @@ Docker is mandatory for security.
 import asyncio
 import logging
 import os
+import shutil
+import sys
 import tempfile
 import uuid
 from datetime import datetime
@@ -16,7 +18,8 @@ from typing import Optional, Tuple
 from ..config import Config, config as default_config
 from ..models import Task, TaskStatus
 from ..storage import TaskStorage, MemoryStorage
-from .docker import DockerRunner, generate_docker_wrapper
+from .docker import DockerRunner
+from .wrapper import generate_wrapper
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +80,22 @@ class SandboxExecutor:
     def get_output_buffer(self, task_id: str) -> list[str]:
         """Get the output buffer for streaming."""
         return self.storage.get_output_buffer(task_id)
+
+    async def _is_docker_available(self) -> bool:
+        """Check if Docker is available and accessible."""
+        if not shutil.which("docker"):
+            return False
+        try:
+            # Try to run docker info to check if we have permission
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "info",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=2.0)
+            return proc.returncode == 0
+        except (asyncio.TimeoutError, Exception):
+            return False
 
     def _validate_code(self, code: str) -> Tuple[bool, Optional[str]]:
         """Validate user code before execution.
@@ -158,11 +177,12 @@ class SandboxExecutor:
             logger.info(f"Task {task_id} failed validation: {error_msg}")
             return task
 
-        # Generate Docker sandbox wrapper script
-        wrapper_code = generate_docker_wrapper(
+        # Generate sandbox wrapper script (used inside Docker container)
+        wrapper_code = generate_wrapper(
             code=task.code,
             cpu_time=self.config.executor.timeout,
-            memory_mb=self.config.executor.max_memory,
+            memory=self.config.executor.max_memory,
+            recursion_limit=self.config.executor.recursion_limit,
             allowed_modules=self.config.security.allowed_modules,
         )
 
@@ -174,9 +194,15 @@ class SandboxExecutor:
             temp_file = f.name
 
         try:
-            # Build Docker command and execute in container
-            cmd = self._docker.build_docker_command(task_id, temp_file)
-            logger.debug(f"Docker command for task {task_id}: {' '.join(cmd[:10])}...")
+            # Check if Docker is available and accessible
+            use_docker = await self._is_docker_available()
+            if use_docker:
+                cmd = self._docker.build_docker_command(task_id, temp_file)
+                logger.debug(f"Docker command for task {task_id}: {' '.join(cmd[:10])}...")
+            else:
+                # Fallback to subprocess execution (less secure, for development/testing)
+                logger.warning(f"Docker not available for task {task_id}, using subprocess fallback")
+                cmd = [sys.executable, '-u', temp_file]
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
