@@ -1,0 +1,92 @@
+@startuml state_task
+!theme plain
+title Task Status State Diagram
+skinparam stateBackgroundColor #FFFFCC
+skinparam stateBorderColor #999999
+
+' ==================== STATES ====================
+[*] --> PENDING : create_task()
+
+state PENDING #LightBlue {
+}
+
+state RUNNING #LightGreen {
+}
+
+state COMPLETED #PaleGreen {
+}
+
+state FAILED #LightCoral {
+}
+
+state TIMEOUT #Orange {
+}
+
+state KILLED #Pink {
+}
+
+' ==================== TRANSITIONS ====================
+PENDING --> RUNNING : execute() called\nacquire semaphore
+
+RUNNING --> COMPLETED : exit_code == 0
+RUNNING --> FAILED : exit_code != 0\n(syntax error, exception, etc.)
+RUNNING --> TIMEOUT : CPU limit exceeded\n(exit_code 137 or -24)
+RUNNING --> KILLED : kill_task() called\nor memory limit
+
+COMPLETED --> [*]
+FAILED --> [*]
+TIMEOUT --> [*]
+KILLED --> [*]
+
+' ==================== NOTES ====================
+note right of PENDING
+  **Initial State**
+  Task created, waiting
+  for execution slot
+end note
+
+note right of RUNNING
+  **Execution State**
+  Docker container running
+  Output streaming active
+end note
+
+note right of COMPLETED
+  **Success**
+  Code executed without error
+  exit_code = 0
+end note
+
+note right of FAILED
+  **Error State**
+  - SyntaxError
+  - ImportError (blocked module)
+  - RuntimeError
+  - Other exceptions
+end note
+
+note right of TIMEOUT
+  **Time Limit**
+  - CPU time exceeded (10s)
+  - SIGXCPU signal
+  - exit_code: 137 or -24
+end note
+
+note right of KILLED
+  **Terminated**
+  - Manual kill via API
+  - Memory limit exceeded
+  - SIGKILL signal
+end note
+
+' ==================== LEGEND ====================
+note as legend
+  **Exit Codes**
+  0 = Success
+  1 = Python exception
+  137 = 128 + SIGKILL (9)
+  -24 = SIGXCPU
+  -9 = SIGKILL (memory)
+end note
+
+@enduml
