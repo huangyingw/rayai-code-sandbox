@@ -55,6 +55,32 @@ try:
 except (ValueError, resource.error):
     pass
 
+# =============================================================================
+# SECURITY: Block dangerous attribute access (__class__, __bases__, etc.)
+# This prevents sandbox escapes like: ().__class__.__bases__[0].__subclasses__()
+# =============================================================================
+BLOCKED_ATTRS = frozenset({{
+    '__class__', '__bases__', '__mro__', '__subclasses__',
+    '__globals__', '__code__', '__closure__', '__func__',
+    '__self__', '__dict__', '__weakref__',
+    '__init_subclass__', '__set_name__',
+    '__reduce__', '__reduce_ex__',  # Pickle-based attacks
+    '__getattribute__', '__setattr__', '__delattr__',
+    '__dir__',
+}})
+
+_original_getattr = getattr
+
+def _safe_getattr(obj, name, *default):
+    """Restricted getattr that blocks dangerous attributes."""
+    if isinstance(name, str) and name in BLOCKED_ATTRS:
+        raise AttributeError(f"Access to '{{name}}' is not allowed for security reasons")
+    return _original_getattr(obj, name, *default) if default else _original_getattr(obj, name)
+
+# Patch getattr globally
+import builtins
+builtins.getattr = _safe_getattr
+
 # Enhanced restricted builtins with bypass protection
 class RestrictedBuiltins:
     """Secure wrapper that prevents attribute-based escapes."""
@@ -68,12 +94,15 @@ class RestrictedBuiltins:
         'frozenset': frozenset, 'hash': hash, 'hex': hex, 'id': id, 'int': int,
         'isinstance': isinstance, 'issubclass': issubclass, 'iter': iter,
         'len': len, 'list': list, 'map': map, 'max': max, 'min': min,
-        'next': next, 'object': object, 'oct': oct, 'ord': ord,
+        'next': next, 'oct': oct, 'ord': ord,
         'pow': pow, 'print': print, 'range': range, 'repr': repr,
         'reversed': reversed, 'round': round, 'set': set,
         'slice': slice, 'sorted': sorted, 'str': str, 'sum': sum,
         'tuple': tuple, 'zip': zip,
         'True': True, 'False': False, 'None': None,
+        # Safe getattr (patched version)
+        'getattr': _safe_getattr,
+        'hasattr': hasattr,
         # Safe exceptions
         'Exception': Exception, 'BaseException': BaseException,
         'ValueError': ValueError, 'TypeError': TypeError,
@@ -82,6 +111,7 @@ class RestrictedBuiltins:
         'StopIteration': StopIteration, 'ZeroDivisionError': ZeroDivisionError,
         'NameError': NameError, 'ImportError': ImportError,
         'ArithmeticError': ArithmeticError, 'LookupError': LookupError,
+        'RecursionError': RecursionError, 'MemoryError': MemoryError,
     }}
 
     # Modules allowed for import (whitelist approach)
@@ -97,7 +127,6 @@ class RestrictedBuiltins:
     }}
 
     def __init__(self):
-        import builtins
         self._original_import = builtins.__import__
 
     def __getitem__(self, key):
@@ -123,13 +152,23 @@ class RestrictedBuiltins:
 restricted = RestrictedBuiltins()
 restricted._SAFE['__import__'] = restricted.restricted_import
 
-# Prevent access to dangerous attributes
-class SafeObject:
-    """Wrapper to prevent __class__ based escapes."""
-    pass
-
 # User code
 user_code = {user_code!r}
+
+# =============================================================================
+# SECURITY: Audit trail for attribute access attempts
+# Intercept __getattribute__ at AST level is not possible here, but we can
+# detect common escape patterns by checking the code
+# =============================================================================
+DANGEROUS_PATTERNS = [
+    '__class__', '__bases__', '__mro__', '__subclasses__',
+    '__globals__', '__code__', '__builtins__',
+]
+
+for pattern in DANGEROUS_PATTERNS:
+    if pattern in user_code:
+        print(f"SecurityError: Code contains blocked pattern '{{pattern}}'", file=sys.stderr)
+        sys.exit(1)
 
 # Create restricted globals
 restricted_globals = {{
@@ -169,6 +208,7 @@ class DockerExecutor:
         self.tasks: dict[str, TaskResult] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.output_buffers: dict[str, list[str]] = {}
+        self.container_names: dict[str, str] = {}  # task_id -> container_name
 
     @classmethod
     def is_docker_available(cls) -> bool:
@@ -234,7 +274,7 @@ class DockerExecutor:
 
         try:
             if self.use_docker and self.is_docker_available():
-                cmd = await self._build_docker_command(temp_file)
+                cmd = await self._build_docker_command(task_id, temp_file)
             else:
                 # Fallback to subprocess execution
                 import sys
@@ -314,11 +354,16 @@ class DockerExecutor:
         task.finished_at = datetime.now()
         return task
 
-    async def _build_docker_command(self, script_path: str) -> list[str]:
+    async def _build_docker_command(self, task_id: str, script_path: str) -> list[str]:
         """Build Docker run command with security restrictions."""
-        container_name = f"sandbox-{uuid.uuid4().hex[:8]}"
+        # Use task_id for consistent container naming
+        container_name = f"sandbox-{task_id}"
+        self.container_names[task_id] = container_name
 
-        return [
+        # Get seccomp profile path
+        seccomp_path = os.path.join(os.path.dirname(__file__), "seccomp-profile.json")
+
+        cmd = [
             "docker", "run",
             "--rm",  # Remove container after exit
             "--name", container_name,
@@ -326,7 +371,7 @@ class DockerExecutor:
             # Resource limits
             f"--memory={self.max_memory}m",
             "--memory-swap", f"{self.max_memory}m",  # No swap
-            f"--cpus=1",
+            "--cpus=1",
             "--pids-limit=50",  # Limit processes
 
             # Network isolation
@@ -337,7 +382,13 @@ class DockerExecutor:
             "--cap-drop=ALL",  # Drop all capabilities
             "--read-only",  # Read-only filesystem
             "--tmpfs=/tmp:size=10m,noexec,nosuid,nodev",  # Temp with limits
+        ]
 
+        # Add seccomp profile if available
+        if os.path.exists(seccomp_path):
+            cmd.extend(["--security-opt", f"seccomp={seccomp_path}"])
+
+        cmd.extend([
             # User namespace (run as nobody)
             "--user=65534:65534",
 
@@ -347,7 +398,9 @@ class DockerExecutor:
             # Image and command
             self.DOCKER_IMAGE,
             "python3", "-u", "/sandbox/script.py",
-        ]
+        ])
+
+        return cmd
 
     async def _kill_process(self, process, task_id: str):
         """Kill process and cleanup Docker container if needed."""
@@ -359,13 +412,15 @@ class DockerExecutor:
 
         # Also try to stop Docker container
         if self.use_docker:
-            container_name = f"sandbox-{task_id}"
+            container_name = self.container_names.get(task_id, f"sandbox-{task_id}")
             kill_proc = await asyncio.create_subprocess_exec(
                 "docker", "kill", container_name,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await kill_proc.wait()
+            # Cleanup container name mapping
+            self.container_names.pop(task_id, None)
 
     async def kill_task(self, task_id: str) -> bool:
         """Kill a running task."""

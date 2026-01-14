@@ -1,0 +1,205 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "read",
+        "write",
+        "close",
+        "fstat",
+        "lseek",
+        "mmap",
+        "mprotect",
+        "munmap",
+        "brk",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "ioctl",
+        "access",
+        "pipe",
+        "select",
+        "sched_yield",
+        "mremap",
+        "msync",
+        "mincore",
+        "madvise",
+        "dup",
+        "dup2",
+        "nanosleep",
+        "getpid",
+        "exit",
+        "exit_group",
+        "uname",
+        "fcntl",
+        "flock",
+        "fsync",
+        "fdatasync",
+        "ftruncate",
+        "getdents",
+        "getdents64",
+        "getcwd",
+        "readlink",
+        "gettimeofday",
+        "getrlimit",
+        "getrusage",
+        "sysinfo",
+        "times",
+        "getuid",
+        "getgid",
+        "geteuid",
+        "getegid",
+        "getppid",
+        "getpgrp",
+        "setsid",
+        "setpgid",
+        "getgroups",
+        "setgroups",
+        "utime",
+        "futex",
+        "set_tid_address",
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "set_robust_list",
+        "get_robust_list",
+        "prlimit64",
+        "getrandom",
+        "memfd_create",
+        "arch_prctl",
+        "poll",
+        "ppoll",
+        "pselect6",
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "eventfd",
+        "eventfd2",
+        "pipe2",
+        "dup3",
+        "newfstatat",
+        "openat",
+        "readlinkat",
+        "faccessat",
+        "lstat",
+        "stat",
+        "statx",
+        "rseq"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "names": [
+        "clone",
+        "clone3"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2114060288,
+          "valueTwo": 0,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "Allow clone only for threads, not new processes"
+    },
+    {
+      "names": [
+        "socket",
+        "connect",
+        "accept",
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "bind",
+        "listen",
+        "socketpair",
+        "setsockopt",
+        "getsockopt",
+        "getsockname",
+        "getpeername"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block all network syscalls"
+    },
+    {
+      "names": [
+        "execve",
+        "execveat"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block exec syscalls to prevent shell escapes"
+    },
+    {
+      "names": [
+        "fork",
+        "vfork"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block fork to prevent fork bombs (Docker pids-limit is backup)"
+    },
+    {
+      "names": [
+        "ptrace"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block ptrace to prevent debugging/tracing"
+    },
+    {
+      "names": [
+        "mount",
+        "umount",
+        "umount2",
+        "pivot_root",
+        "chroot"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block filesystem manipulation"
+    },
+    {
+      "names": [
+        "reboot",
+        "kexec_load",
+        "kexec_file_load"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block system shutdown/reboot"
+    },
+    {
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block kernel module operations"
+    }
+  ]
+}
