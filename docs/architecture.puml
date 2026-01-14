@@ -1,0 +1,93 @@
+@startuml architecture
+!theme plain
+title Code Executor Sandbox - System Architecture
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' External actors
+actor "Client" as client
+
+' Main system boundary
+package "Code Executor Sandbox" {
+
+    ' API Layer
+    package "API Layer (FastAPI)" {
+        component "POST /execute" as api_execute
+        component "GET /tasks/{id}" as api_get
+        component "GET /tasks/{id}/stream" as api_stream
+        component "DELETE /tasks/{id}" as api_kill
+        component "GET /health" as api_health
+    }
+
+    ' Core Layer
+    package "Core Layer" {
+        component "CodeExecutor" as executor {
+            component "Task Manager" as task_mgr
+            component "Output Buffer" as output_buf
+            component "Process Manager" as proc_mgr
+        }
+
+        component "Code Validator" as validator
+    }
+
+    ' Execution Layer
+    package "Execution Layer (Subprocess)" {
+        component "Sandbox Wrapper" as sandbox {
+            component "Resource Limits" as res_limits
+            component "Restricted Builtins" as restricted
+            component "Module Blocklist" as blocklist
+        }
+
+        component "User Code" as user_code
+    }
+
+    ' Storage
+    database "In-Memory Store" as store {
+        storage "Tasks" as tasks
+        storage "Output Buffers" as buffers
+    }
+}
+
+' External resources
+cloud "Temp Files" as temp
+
+' Relationships
+client --> api_execute : Submit code
+client --> api_get : Query result
+client --> api_stream : SSE stream
+client --> api_kill : Kill task
+client --> api_health : Health check
+
+api_execute --> executor : Create & execute task
+api_get --> task_mgr : Get task status
+api_stream --> output_buf : Stream output
+api_kill --> proc_mgr : Kill process
+
+executor --> validator : Validate code
+executor --> sandbox : Execute in subprocess
+sandbox --> user_code : Run user code
+
+task_mgr --> tasks : CRUD operations
+output_buf --> buffers : Read/write
+
+sandbox --> temp : Write wrapper script
+sandbox --> res_limits : Apply limits
+sandbox --> restricted : Filter builtins
+sandbox --> blocklist : Block imports
+
+note right of res_limits
+  - CPU: 10s
+  - Memory: 128MB
+  - File size: 1MB
+  - Open files: 10
+  - Recursion: 100
+end note
+
+note right of blocklist
+  Blocked modules:
+  os, subprocess, socket,
+  pickle, ctypes, etc.
+end note
+
+@enduml
