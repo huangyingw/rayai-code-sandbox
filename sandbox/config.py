@@ -16,6 +16,7 @@ class ExecutorConfig:
     max_memory: int = 128  # MB
     max_output_size: int = 1024 * 1024  # 1MB
     max_code_size: int = 100000  # characters
+    recursion_limit: int = 100  # max recursion depth to prevent stack overflow
 
 
 @dataclass
@@ -62,6 +63,8 @@ def load_config() -> Config:
         config.executor.max_memory = int(max_memory)
     if max_output := os.getenv("EXECUTOR_MAX_OUTPUT"):
         config.executor.max_output_size = int(max_output)
+    if recursion_limit := os.getenv("EXECUTOR_RECURSION_LIMIT"):
+        config.executor.recursion_limit = int(recursion_limit)
 
     # Server settings
     if host := os.getenv("SERVER_HOST"):

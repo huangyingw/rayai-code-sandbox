@@ -160,6 +160,7 @@ Configuration via environment variables:
    - Memory: 128MB max
    - File size: 1MB max
    - Open files: 10 max
+   - Recursion depth: 100 max (prevents stack overflow)
 
 3. **Restricted Builtins**: Dangerous functions are removed:
    - `eval`, `exec`, `compile` - prevent dynamic code execution
@@ -260,9 +261,57 @@ eval("__import__('os').system('rm -rf /')")
 
 **Result**: `NameError` - `eval` is not defined
 
+## Correctness & Robustness Features
+
+### Code Validation
+- **Syntax checking**: Code is compiled before execution to catch syntax errors early
+- **Empty code detection**: Empty or whitespace-only code is rejected immediately
+- **Code length limit**: Maximum 100,000 characters to prevent memory issues
+- **UTF-8 validation**: Invalid encoding is rejected with clear error message
+
+### Real-time Streaming
+- **Unbuffered output**: Uses `-u` flag and `line_buffering=True` for immediate output
+- **Line-by-line streaming**: Output is streamed as it's produced, not buffered
+
+### Error Handling
+- **Clear error messages**: Specific messages for RecursionError, MemoryError, etc.
+- **Exit code interpretation**: Proper handling of signal-based exits (SIGKILL, SIGXCPU)
+- **Exception propagation**: User exceptions are captured and reported clearly
+
+### Unicode Support
+- **Full Unicode support**: Handles international characters, emojis, etc.
+- **UTF-8 encoding**: All output is decoded as UTF-8 with error replacement
+
+### Example 7: Recursion Bomb
+
+```python
+# Deep recursion
+def recurse(n):
+    return recurse(n + 1)
+recurse(0)
+```
+
+**Result**: `RecursionError: maximum recursion depth exceeded`
+
+### Example 8: Unicode Code
+
+```python
+# Unicode variable names and strings
+变量 = "Hello, 世界! 🌍"
+print(变量)
+```
+
+**Result**: Executes successfully, outputs `Hello, 世界! 🌍`
+
 ## Running Tests
 
 ```bash
-# Run the test examples
+# Run correctness tests
+python test_correctness.py
+
+# Run integration test examples
 python test_examples.py
+
+# Run unit tests with pytest
+pytest tests/ -v
 ```

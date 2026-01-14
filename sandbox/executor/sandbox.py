@@ -11,7 +11,7 @@ import sys
 import tempfile
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 from ..config import Config, config as default_config
 from ..models import Task, TaskStatus
@@ -61,6 +61,34 @@ class SandboxExecutor:
         """Get the output buffer for streaming."""
         return self.storage.get_output_buffer(task_id)
 
+    def _validate_code(self, code: str) -> Tuple[bool, Optional[str]]:
+        """Validate user code before execution.
+
+        Returns:
+            (is_valid, error_message)
+        """
+        # Check for empty or whitespace-only code
+        if not code or not code.strip():
+            return False, "Empty code is not allowed"
+
+        # Check code length
+        if len(code) > self.config.executor.max_code_size:
+            return False, f"Code exceeds maximum length ({self.config.executor.max_code_size} characters)"
+
+        # Validate UTF-8 encoding
+        try:
+            code.encode('utf-8').decode('utf-8')
+        except UnicodeError as e:
+            return False, f"Invalid encoding in code: {e}"
+
+        # Try to compile the code to check for syntax errors
+        try:
+            compile(code, '<user_code>', 'exec')
+        except SyntaxError as e:
+            return False, f"SyntaxError: {e.msg} at line {e.lineno}"
+
+        return True, None
+
     async def execute(self, task_id: str) -> Task:
         """Execute the task's code in a sandbox."""
         task = await self.storage.get(task_id)
@@ -72,11 +100,24 @@ class SandboxExecutor:
         await self.storage.update(task)
         logger.info(f"Starting execution of task {task_id}")
 
+        # Validate code before execution
+        is_valid, error_msg = self._validate_code(task.code)
+        if not is_valid:
+            task.status = TaskStatus.FAILED
+            task.error_message = error_msg
+            task.stderr = error_msg + "\n"
+            task.exit_code = 1
+            task.finished_at = datetime.now()
+            await self.storage.update(task)
+            logger.info(f"Task {task_id} failed validation: {error_msg}")
+            return task
+
         # Generate sandbox wrapper script
         wrapper_code = generate_wrapper(
             code=task.code,
             cpu_time=self.config.executor.timeout,
             memory=self.config.executor.max_memory,
+            recursion_limit=self.config.executor.recursion_limit,
             blocked_modules=self.config.security.blocked_modules,
         )
 
@@ -152,24 +193,49 @@ class SandboxExecutor:
             if process.returncode == 0:
                 task.status = TaskStatus.COMPLETED
                 logger.info(f"Task {task_id} completed successfully")
-            elif process.returncode == 137:
+            elif process.returncode == 137 or process.returncode == -24:
+                # 137 = 128 + 9 (SIGKILL after SIGXCPU)
+                # -24 = SIGXCPU
                 task.status = TaskStatus.TIMEOUT
                 task.error_message = "CPU time limit exceeded"
                 logger.warning(f"Task {task_id} exceeded CPU time limit")
-            elif process.returncode == -9:
+            elif process.returncode == -9 or process.returncode == 128 + 9:
                 task.status = TaskStatus.KILLED
                 task.error_message = "Process was killed (possibly due to memory limit)"
                 logger.warning(f"Task {task_id} was killed")
+            elif process.returncode == -6 or process.returncode == 128 + 6:
+                # SIGABRT - often from memory allocation failure
+                task.status = TaskStatus.FAILED
+                task.error_message = "Process aborted (memory allocation failure)"
+                logger.warning(f"Task {task_id} aborted")
             else:
                 task.status = TaskStatus.FAILED
+                # Extract meaningful error message from stderr
                 if task.stderr:
-                    task.error_message = task.stderr.strip().split('\n')[-1]
+                    stderr_lines = task.stderr.strip().split('\n')
+                    # Check for specific error types first
+                    if 'RecursionError' in task.stderr:
+                        task.error_message = "RecursionError: maximum recursion depth exceeded"
+                    elif 'MemoryError' in task.stderr:
+                        task.error_message = "MemoryError: out of memory"
+                    else:
+                        # Look for common Python error patterns
+                        for line in reversed(stderr_lines):
+                            if ': ' in line and any(err in line for err in [
+                                'Error', 'Exception', 'Traceback'
+                            ]):
+                                task.error_message = line
+                                break
+                        else:
+                            task.error_message = stderr_lines[-1] if stderr_lines else None
+                else:
+                    task.error_message = f"Process exited with code {process.returncode}"
                 logger.info(f"Task {task_id} failed with exit code {process.returncode}")
 
         except Exception as e:
             logger.exception(f"Error executing task {task_id}")
             task.status = TaskStatus.FAILED
-            task.error_message = str(e)
+            task.error_message = f"Execution error: {type(e).__name__}: {e}"
 
         finally:
             # Cleanup

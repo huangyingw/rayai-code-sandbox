@@ -10,11 +10,16 @@ import sys
 import resource
 import signal
 
+# Force unbuffered output for real-time streaming
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 # Set resource limits
 MAX_CPU_TIME = {cpu_time}  # seconds
 MAX_MEMORY = {memory} * 1024 * 1024  # bytes
 MAX_FILE_SIZE = 1024 * 1024  # 1MB
 MAX_OPEN_FILES = 10
+MAX_RECURSION_DEPTH = {recursion_limit}  # Recursion limit
 
 try:
     resource.setrlimit(resource.RLIMIT_CPU, (MAX_CPU_TIME, MAX_CPU_TIME))
@@ -23,6 +28,9 @@ try:
     resource.setrlimit(resource.RLIMIT_NOFILE, (MAX_OPEN_FILES, MAX_OPEN_FILES))
 except (ValueError, resource.error):
     pass  # Some limits may not be available on all systems
+
+# Set recursion limit to prevent stack overflow
+sys.setrecursionlimit(MAX_RECURSION_DEPTH)
 
 # Set up signal handler for CPU time limit
 def timeout_handler(signum, frame):
@@ -55,6 +63,10 @@ _safe_builtins = {{
     'KeyError': KeyError, 'IndexError': IndexError,
     'AttributeError': AttributeError, 'RuntimeError': RuntimeError,
     'StopIteration': StopIteration, 'ZeroDivisionError': ZeroDivisionError,
+    'SystemExit': SystemExit, 'RecursionError': RecursionError,
+    'MemoryError': MemoryError, 'OverflowError': OverflowError,
+    'ArithmeticError': ArithmeticError, 'LookupError': LookupError,
+    'AssertionError': AssertionError, 'NotImplementedError': NotImplementedError,
 }}
 
 # Block dangerous builtins
@@ -95,12 +107,14 @@ def generate_wrapper(
     code: str,
     cpu_time: int,
     memory: int,
+    recursion_limit: int,
     blocked_modules: list[str]
 ) -> str:
     """Generate the sandbox wrapper script with the given parameters."""
     return SANDBOX_WRAPPER_TEMPLATE.format(
         cpu_time=cpu_time,
         memory=memory,
+        recursion_limit=recursion_limit,
         blocked_modules=repr(blocked_modules),
         user_code=code,
     )
