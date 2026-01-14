@@ -301,6 +301,49 @@ print(s[::-1])
         "HELLO, WORLD!"
     ))
 
+    # Test 19: Async/await with user-managed asyncio.run
+    results.append(await test_code(
+        "Async/await with asyncio.run",
+        '''
+import asyncio
+
+async def hello():
+    await asyncio.sleep(0.1)
+    print("Hello from async!")
+
+asyncio.run(hello())
+''',
+        "completed",
+        "Hello from async!"
+    ))
+
+    # Test 20: Top-level await
+    results.append(await test_code(
+        "Top-level await",
+        '''
+import asyncio
+await asyncio.sleep(0.1)
+print("Done with top-level await!")
+''',
+        "completed",
+        "Done with top-level await!"
+    ))
+
+    # Test 21: __future__ imports
+    results.append(await test_code(
+        "__future__ imports",
+        '''
+from __future__ import annotations
+
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+print(greet("Future"))
+''',
+        "completed",
+        "Hello, Future!"
+    ))
+
     # Summary
     print("\n" + "=" * 60)
     print("TEST SUMMARY")
