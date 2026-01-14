@@ -1,80 +1,134 @@
 @startuml security_layers
 !theme plain
-title Security Layers - Defense in Depth
-
+title Security Layers - Defense in Depth (Docker Required)
 skinparam componentStyle rectangle
+skinparam noteBackgroundColor #FFFFCC
+skinparam noteBorderColor #999999
 
-' Layers from outside to inside
-rectangle "Layer 1: API Validation" as L1 #LightBlue {
-    component "Input Validation\n(Pydantic)" as input_val
-    component "Code Length Check\n(max 100KB)" as len_check
+' ==================== LAYER 0: RATE LIMITING ====================
+rectangle "Layer 0: Rate Limiting" as L0 #PaleGreen {
+    component "Token Bucket" as rate_bucket
+    component "Per-IP Tracking" as ip_track
 }
 
-rectangle "Layer 2: Code Validation" as L2 #LightGreen {
-    component "Syntax Check\n(compile())" as syntax
-    component "Empty Code\nDetection" as empty
-}
-
-rectangle "Layer 3: Process Isolation" as L3 #LightYellow {
-    component "Subprocess\nExecution" as subprocess
-    component "Separate Memory\nSpace" as memory
-}
-
-rectangle "Layer 4: Resource Limits" as L4 #LightCoral {
-    component "CPU Time\n(10 seconds)" as cpu
-    component "Memory\n(128 MB)" as mem
-    component "File Size\n(1 MB)" as file
-    component "Open Files\n(10 max)" as files
-    component "Recursion\n(100 depth)" as recursion
-}
-
-rectangle "Layer 5: Restricted Execution" as L5 #Lavender {
-    component "Blocked Builtins\n(eval, exec, open...)" as builtins
-    component "Module Blocklist\n(os, socket, subprocess...)" as modules
-    component "Custom __import__" as import_hook
-}
-
-' Flow
-L1 -down-> L2 : Validated input
-L2 -down-> L3 : Valid code
-L3 -down-> L4 : Isolated process
-L4 -down-> L5 : Limited resources
-
-' Attacks blocked at each layer
-note right of L1
-    **Blocks:**
-    - Oversized payloads
-    - Invalid JSON
+note right of L0
+  **Blocks:** DoS attacks
+  60 req/min, burst: 10
+  Returns 429 + Retry-After
 end note
+
+' ==================== LAYER 1: API VALIDATION ====================
+rectangle "Layer 1: API Validation" as L1 #LightBlue {
+    component "Pydantic Validation" as pydantic
+    component "Code Length (100KB)" as len_check
+}
+
+note right of L1
+  **Blocks:**
+  Oversized payloads
+  Invalid JSON format
+  Missing fields
+end note
+
+' ==================== LAYER 2: CODE VALIDATION ====================
+rectangle "Layer 2: Code Validation" as L2 #LightGreen {
+    component "Empty Check" as empty
+    component "UTF-8 Encoding" as encoding
+    component "Syntax Check" as syntax
+    component "Pattern Scanner" as pattern
+}
 
 note right of L2
-    **Blocks:**
-    - Syntax errors
-    - Empty submissions
+  **Blocks:**
+  Empty code
+  Invalid encoding
+  Syntax errors
+  __class__, __bases__...
 end note
+
+' ==================== LAYER 3: DOCKER CONTAINER ====================
+rectangle "Layer 3: Docker Container (MANDATORY)" as L3 #LightCoral {
+    component "--network=none" as net_none
+    component "--read-only" as read_only
+    component "--cap-drop=ALL" as cap_drop
+    component "--memory=128m" as mem_limit
+    component "--pids-limit=50" as pids_limit
+    component "--user=nobody" as user_ns
+    component "seccomp profile" as seccomp
+}
 
 note right of L3
-    **Blocks:**
-    - Server process access
-    - Shared memory attacks
+  **Blocks (OS Level):**
+  Network access (complete)
+  Filesystem write
+  All capabilities
+  Memory exhaustion
+  Fork bombs
+  Privilege escalation
+  Dangerous syscalls
 end note
+
+' ==================== LAYER 4: PYTHON SANDBOX ====================
+rectangle "Layer 4: Python Sandbox" as L4 #Lavender {
+    component "Module Whitelist" as whitelist
+    component "Restricted Builtins" as builtins
+    component "Attribute Blocking" as attr_block
+    component "Resource Limits" as res_limits
+}
 
 note right of L4
-    **Blocks:**
-    - CPU exhaustion (infinite loops)
-    - Memory bombs
-    - Disk filling
-    - File descriptor exhaustion
-    - Stack overflow
+  **Blocks (Python Level):**
+  Unauthorized imports
+  eval, exec, open...
+  __class__ escape
+  CPU/memory (backup)
 end note
 
+' ==================== LAYER 5: CONCURRENCY ====================
+rectangle "Layer 5: Concurrency Control" as L5 #Pink {
+    component "Semaphore (max 10)" as semaphore
+}
+
 note right of L5
-    **Blocks:**
-    - File system access
-    - Network access
-    - System commands
-    - Code injection
-    - Module hijacking
+  **Blocks:**
+  Server overload
+  Resource exhaustion
+end note
+
+' ==================== FLOW ====================
+L0 -down-> L1 : Rate OK
+L1 -down-> L2 : Valid request
+L2 -down-> L3 : Valid code
+L3 -down-> L4 : Isolated container
+L4 -down-> L5 : Sandbox active
+
+' ==================== ATTACK EXAMPLES ====================
+note as attacks
+  **Attacks Blocked:**
+
+  1. **Fork Bomb** import os; while True: os.fork()
+     Layer 3: --pids-limit + seccomp
+     Layer 4: whitelist (os not allowed)
+
+  2. **Network Access** import socket
+     Layer 3: --network=none (complete)
+     Layer 4: whitelist (socket not allowed)
+
+  3. **Sandbox Escape** ().__class__.__bases__
+     Layer 2: pattern scanner
+     Layer 4: attribute blocking
+
+  4. **File Access** open("/etc/passwd")
+     Layer 3: --read-only filesystem
+     Layer 4: open removed from builtins
+
+  5. **Memory Bomb** x = "A" * 10**10
+     Layer 3: --memory=128m (Docker)
+     Layer 4: resource.setrlimit (backup)
+
+  6. **DoS Attack** 1000 requests/second
+     Layer 0: rate limiting (429)
+     Layer 5: semaphore (max 10)
 end note
 
 @enduml
