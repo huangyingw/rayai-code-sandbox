@@ -1,0 +1,80 @@
+@startuml security_layers
+!theme plain
+title Security Layers - Defense in Depth
+
+skinparam componentStyle rectangle
+
+' Layers from outside to inside
+rectangle "Layer 1: API Validation" as L1 #LightBlue {
+    component "Input Validation\n(Pydantic)" as input_val
+    component "Code Length Check\n(max 100KB)" as len_check
+}
+
+rectangle "Layer 2: Code Validation" as L2 #LightGreen {
+    component "Syntax Check\n(compile())" as syntax
+    component "Empty Code\nDetection" as empty
+}
+
+rectangle "Layer 3: Process Isolation" as L3 #LightYellow {
+    component "Subprocess\nExecution" as subprocess
+    component "Separate Memory\nSpace" as memory
+}
+
+rectangle "Layer 4: Resource Limits" as L4 #LightCoral {
+    component "CPU Time\n(10 seconds)" as cpu
+    component "Memory\n(128 MB)" as mem
+    component "File Size\n(1 MB)" as file
+    component "Open Files\n(10 max)" as files
+    component "Recursion\n(100 depth)" as recursion
+}
+
+rectangle "Layer 5: Restricted Execution" as L5 #Lavender {
+    component "Blocked Builtins\n(eval, exec, open...)" as builtins
+    component "Module Blocklist\n(os, socket, subprocess...)" as modules
+    component "Custom __import__" as import_hook
+}
+
+' Flow
+L1 -down-> L2 : Validated input
+L2 -down-> L3 : Valid code
+L3 -down-> L4 : Isolated process
+L4 -down-> L5 : Limited resources
+
+' Attacks blocked at each layer
+note right of L1
+    **Blocks:**
+    - Oversized payloads
+    - Invalid JSON
+end note
+
+note right of L2
+    **Blocks:**
+    - Syntax errors
+    - Empty submissions
+end note
+
+note right of L3
+    **Blocks:**
+    - Server process access
+    - Shared memory attacks
+end note
+
+note right of L4
+    **Blocks:**
+    - CPU exhaustion (infinite loops)
+    - Memory bombs
+    - Disk filling
+    - File descriptor exhaustion
+    - Stack overflow
+end note
+
+note right of L5
+    **Blocks:**
+    - File system access
+    - Network access
+    - System commands
+    - Code injection
+    - Module hijacking
+end note
+
+@enduml

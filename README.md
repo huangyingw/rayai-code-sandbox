@@ -10,6 +10,8 @@ A secure HTTP API for executing arbitrary Python code with real-time streaming o
 - **Network isolation**: No network access in sandbox
 - **Module whitelist**: Only safe modules allowed
 - **Real-time streaming**: SSE-based output streaming
+- **Rate limiting**: Token bucket algorithm per IP
+- **Concurrency control**: Configurable max concurrent tasks
 
 ## Setup
 
@@ -116,9 +118,14 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 │                           │                                   │
 │                           ▼                                   │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │                  DockerExecutor                         │  │
-│  │  - Task management (in-memory store)                   │  │
-│  │  - Output buffering for streaming                      │  │
+│  │              SandboxExecutor / DockerExecutor           │  │
+│  │  ┌─────────────────┐    ┌────────────────────────┐     │  │
+│  │  │  TaskStorage    │    │   Config               │     │  │
+│  │  │  (Abstract)     │    │   - ExecutorConfig     │     │  │
+│  │  │  └─MemoryStorage│    │   - SecurityConfig     │     │  │
+│  │  │  └─RedisStorage │    │   - ServerConfig       │     │  │
+│  │  │    (future)     │    │                        │     │  │
+│  │  └─────────────────┘    └────────────────────────┘     │  │
 │  └────────────────────────┬───────────────────────────────┘  │
 │                           │                                   │
 │                           ▼                                   │
@@ -132,16 +139,64 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 │  │  │  • --memory=128m (memory limit)                  │  │  │
 │  │  │  • --pids-limit=50 (process limit)               │  │  │
 │  │  │  • --user=65534 (nobody user)                    │  │  │
+│  │  │  • seccomp profile (syscall filtering)           │  │  │
 │  │  └──────────────────────────────────────────────────┘  │  │
 │  │  ┌──────────────────────────────────────────────────┐  │  │
 │  │  │  Python Sandbox (second layer):                  │  │  │
 │  │  │  • Restricted builtins                           │  │  │
 │  │  │  • Module whitelist                              │  │  │
+│  │  │  • __class__ escape prevention                   │  │  │
 │  │  │  • Resource limits (backup)                      │  │  │
 │  │  └──────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+### Project Structure
+
+```
+sandbox/
+├── __init__.py           # Package initialization
+├── config.py             # Configuration management (env vars)
+├── models.py             # Data models (Task, TaskStatus)
+├── logging.py            # Logging configuration
+├── executor/
+│   ├── __init__.py
+│   ├── sandbox.py        # Main executor implementation
+│   └── wrapper.py        # Sandbox wrapper script template
+├── storage/
+│   ├── __init__.py
+│   ├── base.py           # Abstract storage interface
+│   └── memory.py         # In-memory storage implementation
+└── api/
+    ├── __init__.py
+    └── routes.py         # FastAPI routes
+
+# Security-specific files
+docker_executor.py        # Docker-based executor
+Dockerfile.sandbox        # Hardened sandbox container
+seccomp-profile.json      # Syscall filtering rules
+security_tests.py         # Security test suite
+```
+
+### Configuration
+
+Configuration via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_DOCKER` | auto | Docker mode: "true", "false", or "auto" |
+| `EXECUTOR_TIMEOUT` | 10 | Max execution time (seconds) |
+| `EXECUTOR_MAX_MEMORY` | 128 | Max memory (MB) |
+| `EXECUTOR_MAX_OUTPUT` | 1048576 | Max output size (bytes) |
+| `EXECUTOR_MAX_CONCURRENT` | 10 | Max concurrent running tasks |
+| `RATE_LIMIT_ENABLED` | true | Enable rate limiting |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | 60 | Max requests per minute per IP |
+| `RATE_LIMIT_BURST_SIZE` | 10 | Allow burst of requests |
+| `SERVER_HOST` | 0.0.0.0 | Server bind host |
+| `SERVER_PORT` | 8000 | Server bind port |
+| `LOG_LEVEL` | INFO | Logging level |
+| `DEBUG` | false | Debug mode |
 
 ### Security Layers
 
@@ -155,6 +210,7 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 | Resource limits | `--memory`, `--cpus`, `--pids-limit` |
 | User namespace | `--user=65534:65534` (nobody) |
 | Privilege escalation | `--security-opt=no-new-privileges` |
+| Syscall filtering | `seccomp-profile.json` |
 
 #### Layer 2: Python Sandbox
 
@@ -164,6 +220,8 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
 | Module whitelist | Only allow safe modules: `math`, `json`, `datetime`, etc. |
 | Resource limits | `resource.setrlimit()` for CPU, memory, files |
 | Process limits | `RLIMIT_NPROC=1` to prevent fork bombs |
+| Attribute blocking | Block `__class__`, `__bases__`, `__mro__`, etc. |
+| Code pattern scanning | Detect dangerous patterns before execution |
 
 #### Allowed Modules (Whitelist)
 
@@ -180,6 +238,34 @@ ALLOWED_MODULES = {
 }
 ```
 
+### Security Comparison
+
+| Attack Vector | Subprocess Only | Docker + Sandbox |
+|---------------|-----------------|------------------|
+| Module import bypass | Partial protection | ✓ Blocked |
+| `__class__` escape | ✓ Blocked by pattern scan | ✓ Double blocked |
+| Fork bomb | Blocked by import | ✓ Blocked by `--pids-limit` + seccomp |
+| Network access | Blocked by import | ✓ Blocked by `--network=none` |
+| File system access | Blocked by builtins | ✓ Blocked by `--read-only` |
+| Memory exhaustion | `RLIMIT_AS` | ✓ `--memory` (more reliable) |
+| Shell escape | N/A | ✓ Shells removed from container |
+
+### Robustness Features
+
+1. **Concurrency Limiting**: Maximum 10 concurrent tasks (configurable)
+   - Uses asyncio Semaphore for efficient queueing
+   - Tasks wait for available slots or fail immediately
+
+2. **Rate Limiting**: Token bucket algorithm per IP
+   - 60 requests/minute default (configurable)
+   - Burst allowance for legitimate traffic spikes
+   - Returns `429 Too Many Requests` with `Retry-After` header
+
+3. **Monitoring Endpoints**:
+   - `GET /health` - Quick health check with concurrency status
+   - `GET /status` - Detailed system status
+   - `GET /info` - Security configuration info
+
 ### Trade-offs
 
 | Decision | Pros | Cons |
@@ -189,24 +275,12 @@ ALLOWED_MODULES = {
 | In-memory task store | Simple, fast | Lost on restart, no persistence |
 | SSE vs WebSocket | Simpler, HTTP-compatible | One-way only |
 
-### Security Comparison
-
-| Attack Vector | Subprocess Only | Docker + Sandbox |
-|---------------|-----------------|------------------|
-| Module import bypass | Partial protection | ✓ Blocked |
-| `__class__` escape | Vulnerable | ✓ Blocked by whitelist |
-| Fork bomb | Blocked by import | ✓ Blocked by `--pids-limit` |
-| Network access | Blocked by import | ✓ Blocked by `--network=none` |
-| File system access | Blocked by builtins | ✓ Blocked by `--read-only` |
-| Memory exhaustion | `RLIMIT_AS` | ✓ `--memory` (more reliable) |
-
 ### What's NOT Implemented (production considerations)
 
 1. **Persistent task storage** - Database for task history
-2. **Rate limiting** - Prevent abuse
-3. **Authentication** - Control who can execute code
-4. **Seccomp profiles** - Fine-grained syscall filtering
-5. **gVisor/Firecracker** - Even stronger isolation
+2. **Authentication** - Control who can execute code
+3. **gVisor/Firecracker** - Even stronger isolation
+4. **Distributed execution** - Multi-node scaling
 
 ## Test Examples
 
@@ -271,14 +345,60 @@ eval("__import__('os').system('rm -rf /')")
 
 **Result**: `NameError` - `eval` is not defined
 
+### Example 7: Sandbox Escape Attempt
+
+```python
+# Try to access dangerous attributes
+().__class__.__bases__[0].__subclasses__()
+```
+
+**Result**: `SecurityError: Code contains blocked pattern '__class__'`
+
+### Example 8: Unicode Code
+
+```python
+# Unicode variable names and strings
+变量 = "Hello, 世界! 🌍"
+print(变量)
+```
+
+**Result**: Executes successfully, outputs `Hello, 世界! 🌍`
+
+## Correctness & Robustness Features
+
+### Code Validation
+- **Syntax checking**: Code is compiled before execution to catch syntax errors early
+- **Empty code detection**: Empty or whitespace-only code is rejected immediately
+- **Code length limit**: Maximum 100,000 characters to prevent memory issues
+- **UTF-8 validation**: Invalid encoding is rejected with clear error message
+
+### Real-time Streaming
+- **Unbuffered output**: Uses `-u` flag and `line_buffering=True` for immediate output
+- **Line-by-line streaming**: Output is streamed as it's produced, not buffered
+
+### Error Handling
+- **Clear error messages**: Specific messages for RecursionError, MemoryError, etc.
+- **Exit code interpretation**: Proper handling of signal-based exits (SIGKILL, SIGXCPU)
+- **Exception propagation**: User exceptions are captured and reported clearly
+
+### Unicode Support
+- **Full Unicode support**: Handles international characters, emojis, etc.
+- **UTF-8 encoding**: All output is decoded as UTF-8 with error replacement
+
 ## Running Tests
 
 ```bash
-# Run basic test examples
+# Run correctness tests
+python test_correctness.py
+
+# Run integration test examples
 python test_examples.py
 
 # Run security test suite (tests sandbox escapes)
 python security_tests.py
+
+# Run unit tests with pytest
+pytest tests/ -v
 ```
 
 ### Security Test Categories

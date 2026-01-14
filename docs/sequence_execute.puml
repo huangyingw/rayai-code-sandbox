@@ -1,0 +1,90 @@
+@startuml sequence_execute
+!theme plain
+title Code Execution Flow
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor Client
+participant "FastAPI\n/execute" as API
+participant "CodeExecutor" as Executor
+participant "Validator" as Validator
+participant "Subprocess\n(Sandbox)" as Sandbox
+database "Task Store" as Store
+
+== Submit Code ==
+
+Client -> API : POST /execute\n{"code": "print('hello')"}
+activate API
+
+API -> Executor : create_task(code)
+activate Executor
+Executor -> Store : Store TaskResult\n(status=PENDING)
+Executor --> API : task_id
+deactivate Executor
+
+API -> Executor : execute(task_id, code)\n[background task]
+activate Executor #LightGray
+
+API --> Client : {"task_id": "abc123"}
+deactivate API
+
+== Execute in Background ==
+
+Executor -> Store : Update status\n(RUNNING)
+Executor -> Validator : _validate_code(code)
+activate Validator
+
+alt Syntax Error
+    Validator --> Executor : (False, "SyntaxError...")
+    Executor -> Store : Update status\n(FAILED)
+else Valid Code
+    Validator --> Executor : (True, None)
+    deactivate Validator
+
+    Executor -> Sandbox : create_subprocess\n(python -u wrapper.py)
+    activate Sandbox
+
+    note over Sandbox
+        **Sandbox Setup:**
+        1. Set resource limits
+        2. Set recursion limit
+        3. Configure restricted builtins
+        4. Block dangerous imports
+        5. Execute user code
+    end note
+
+    loop Read Output
+        Sandbox --> Executor : stdout/stderr lines
+        Executor -> Store : Append to output buffer
+    end
+
+    alt Success (exit_code=0)
+        Sandbox --> Executor : exit_code=0
+        Executor -> Store : Update status\n(COMPLETED)
+    else Timeout
+        Sandbox --> Executor : exit_code=137/-24
+        Executor -> Store : Update status\n(TIMEOUT)
+    else Error
+        Sandbox --> Executor : exit_code!=0
+        Executor -> Store : Update status\n(FAILED)
+    end
+
+    deactivate Sandbox
+end
+
+Executor -> Executor : Cleanup temp file
+deactivate Executor
+
+== Query Result ==
+
+Client -> API : GET /tasks/{task_id}
+activate API
+API -> Executor : get_task(task_id)
+Executor -> Store : Fetch TaskResult
+Store --> Executor : TaskResult
+Executor --> API : TaskResult
+API --> Client : TaskResponse JSON
+deactivate API
+
+@enduml

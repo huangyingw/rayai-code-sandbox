@@ -1,0 +1,52 @@
+@startuml sequence_stream
+!theme plain
+title Streaming Output Flow (SSE)
+
+skinparam responseMessageBelowArrow true
+
+actor Client
+participant "FastAPI\n/tasks/{id}/stream" as API
+participant "CodeExecutor" as Executor
+participant "Output Buffer" as Buffer
+
+Client -> API : GET /tasks/{id}/stream
+activate API
+
+API -> Executor : get_task(task_id)
+Executor --> API : TaskResult (status=RUNNING)
+
+loop While task is running
+    API -> Buffer : get_output_buffer(task_id)
+    Buffer --> API : [new lines]
+
+    alt New output available
+        API --> Client : data: {output_line}\n\n
+    end
+
+    API -> API : asyncio.sleep(0.1)
+
+    API -> Executor : get_task(task_id)
+    Executor --> API : TaskResult
+
+    alt Task status changed
+        API --> Client : event: status\ndata: {status}\n\n
+
+        opt Error occurred
+            API --> Client : event: error\ndata: {message}\n\n
+        end
+
+        API --> Client : event: done\ndata: finished\n\n
+    end
+end
+
+deactivate API
+
+note right of API
+    **SSE Format:**
+    - Regular output: data: {line}\n\n
+    - Status event: event: status\ndata: {status}\n\n
+    - Error event: event: error\ndata: {msg}\n\n
+    - Done event: event: done\ndata: finished\n\n
+end note
+
+@enduml
