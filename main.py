@@ -25,6 +25,7 @@ executor = CodeExecutor(
     timeout=10,  # 10 seconds max execution time
     max_memory=128,  # 128MB max memory
     max_output_size=1024 * 1024,  # 1MB max output
+    recursion_limit=100,  # max recursion depth to prevent stack overflow
 )
 
 

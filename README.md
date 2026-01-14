@@ -119,6 +119,7 @@ curl -X DELETE http://localhost:8000/tasks/{task_id}
    - Memory: 128MB max
    - File size: 1MB max
    - Open files: 10 max
+   - Recursion depth: 100 max (prevents stack overflow)
 
 3. **Restricted Builtins**: Dangerous functions are removed:
    - `eval`, `exec`, `compile` - prevent dynamic code execution
@@ -219,9 +220,34 @@ eval("__import__('os').system('rm -rf /')")
 
 **Result**: `NameError` - `eval` is not defined
 
+## Correctness Features
+
+The executor ensures correct code execution through:
+
+### 1. Code Validation
+- **Syntax checking**: Code is compiled before execution to catch syntax errors early
+- **Empty code detection**: Empty or whitespace-only code is rejected immediately
+- **Code length limit**: Maximum 100,000 characters to prevent memory issues
+
+### 2. Real-time Streaming
+- **Unbuffered output**: Uses `-u` flag and `line_buffering=True` for immediate output
+- **Line-by-line streaming**: Output is streamed as it's produced, not buffered
+
+### 3. Proper Error Handling
+- **Clear error messages**: Specific messages for RecursionError, MemoryError, etc.
+- **Exit code interpretation**: Proper handling of signal-based exits (SIGKILL, SIGXCPU)
+- **Exception propagation**: User exceptions are captured and reported clearly
+
+### 4. Unicode Support
+- **Full Unicode support**: Handles international characters, emojis, etc.
+- **UTF-8 encoding**: All output is decoded as UTF-8 with error replacement
+
 ## Running Tests
 
 ```bash
-# Run the test examples
+# Run correctness tests
+python test_correctness.py
+
+# Run security/robustness tests
 python test_examples.py
 ```
