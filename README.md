@@ -13,6 +13,41 @@ A secure HTTP API for executing arbitrary Python code with real-time streaming o
 - **Rate limiting**: Token bucket algorithm per IP
 - **Concurrency control**: Configurable max concurrent tasks
 
+## Quick Start
+
+```bash
+# Clone and enter project
+git clone <repository-url>
+cd code-executor-sandbox
+
+# Setup, build, and run (one command each)
+make setup    # Create venv, install dependencies
+make build    # Build Docker sandbox image
+make run      # Start API server at http://localhost:8000
+
+# Or all at once
+make setup build run
+```
+
+Test the API:
+```bash
+# In another terminal
+curl -X POST http://localhost:8000/execute \
+  -H "Content-Type: application/json" \
+  -d '{"code": "print(sum(range(10)))"}'
+# Returns: {"task_id": "abc123"}
+
+curl http://localhost:8000/tasks/abc123
+# Returns: {"status": "completed", "stdout": "45\n", ...}
+```
+
+Run tests:
+```bash
+make test-unit      # Unit tests (no server needed)
+make test-security  # Security tests (server must be running)
+make demo           # Demo examples (server must be running)
+```
+
 ## Setup
 
 ### Requirements
@@ -359,12 +394,12 @@ eval("__import__('os').system('rm -rf /')")
 ### Example 8: Unicode Code
 
 ```python
-# Unicode variable names and strings
-变量 = "Hello, 世界! 🌍"
-print(变量)
+# Unicode variable names and strings (Japanese, Russian, emoji)
+データ = "Hello, мир! 🌍"
+print(データ)
 ```
 
-**Result**: Executes successfully, outputs `Hello, 世界! 🌍`
+**Result**: Executes successfully, outputs `Hello, мир! 🌍`
 
 ## Correctness & Robustness Features
 

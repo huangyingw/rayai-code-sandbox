@@ -58,18 +58,18 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_unicode_code(self, executor):
         """Unicode characters in code should work correctly."""
-        code = 'print("Hello, 世界! 🌍")'
+        code = 'print("Hello, мир! 🌍")'  # Russian for "world"
         task = await executor.create_task(code)
         result = await executor.execute(task.task_id)
 
         assert result.status == TaskStatus.COMPLETED
-        assert "世界" in result.stdout
+        assert "мир" in result.stdout
         assert result.exit_code == 0
 
     @pytest.mark.asyncio
     async def test_unicode_variable_names(self, executor):
         """Unicode variable names should work."""
-        code = '变量 = 42\nprint(变量)'
+        code = 'データ = 42\nprint(データ)'  # Japanese katakana for "data"
         task = await executor.create_task(code)
         result = await executor.execute(task.task_id)
 

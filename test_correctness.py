@@ -159,11 +159,11 @@ except ZeroDivisionError:
     results.append(await test_code(
         "Unicode characters",
         '''
-print("Hello 世界! 🎉")
-print("Привет мир!")
+print("Hello мир! 🎉")
+print("Bonjour le monde!")
 ''',
         "completed",
-        "Hello 世界!"
+        "Hello мир!"
     ))
 
     # Test 9: Safe math module
