@@ -8,8 +8,6 @@ Docker is mandatory for security.
 import asyncio
 import logging
 import os
-import shutil
-import sys
 import tempfile
 import uuid
 from datetime import datetime
@@ -80,22 +78,6 @@ class SandboxExecutor:
     def get_output_buffer(self, task_id: str) -> list[str]:
         """Get the output buffer for streaming."""
         return self.storage.get_output_buffer(task_id)
-
-    async def _is_docker_available(self) -> bool:
-        """Check if Docker is available and accessible."""
-        if not shutil.which("docker"):
-            return False
-        try:
-            # Try to run docker info to check if we have permission
-            proc = await asyncio.create_subprocess_exec(
-                "docker", "info",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await asyncio.wait_for(proc.wait(), timeout=2.0)
-            return proc.returncode == 0
-        except (asyncio.TimeoutError, Exception):
-            return False
 
     def _validate_code(self, code: str) -> Tuple[bool, Optional[str]]:
         """Validate user code before execution.
@@ -196,15 +178,9 @@ class SandboxExecutor:
         os.chmod(temp_file, 0o644)
 
         try:
-            # Check if Docker is available and accessible
-            use_docker = await self._is_docker_available()
-            if use_docker:
-                cmd = self._docker.build_docker_command(task_id, temp_file)
-                logger.debug(f"Docker command for task {task_id}: {' '.join(cmd[:10])}...")
-            else:
-                # Fallback to subprocess execution (less secure, for development/testing)
-                logger.warning(f"Docker not available for task {task_id}, using subprocess fallback")
-                cmd = [sys.executable, '-u', temp_file]
+            # Build Docker command (Docker is mandatory)
+            cmd = self._docker.build_docker_command(task_id, temp_file)
+            logger.debug(f"Docker command for task {task_id}: {' '.join(cmd[:10])}...")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
