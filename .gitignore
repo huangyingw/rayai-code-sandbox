@@ -26,3 +26,14 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Editor/IDE temp files
+cscope.*
+*.bak
+files.proj*
+rsync.files
+includefile.conf
+prunefile.conf
+prunefix.*
+tags
+TAGS
