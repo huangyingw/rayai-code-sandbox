@@ -95,7 +95,7 @@ note right of Docker
   --memory=128m
   --pids-limit=50
   --user=nobody
-  --security-opt seccomp=...
+  (Docker default seccomp)
 end note
 
 Docker -> Container : docker run

@@ -54,7 +54,7 @@ rectangle "Layer 3: Docker Container (MANDATORY)" as L3 #LightCoral {
     component "--memory=128m" as mem_limit
     component "--pids-limit=50" as pids_limit
     component "--user=nobody" as user_ns
-    component "seccomp profile" as seccomp
+    component "Docker default seccomp" as seccomp
 }
 
 note right of L3
@@ -107,7 +107,7 @@ note as attacks
   **Attacks Blocked:**
 
   1. **Fork Bomb** import os; while True: os.fork()
-     Layer 3: --pids-limit + seccomp
+     Layer 3: --pids-limit
      Layer 4: whitelist (os not allowed)
 
   2. **Network Access** import socket

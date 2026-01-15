@@ -68,7 +68,7 @@ package "Docker Container (per task)" as docker_container #LightCoral {
       --memory=128m
       --pids-limit=50
       --user=nobody
-      seccomp profile
+      (Docker default seccomp)
     end note
 
     package "Python Sandbox (Layer 2)" as python_sandbox {
@@ -84,7 +84,6 @@ package "Docker Container (per task)" as docker_container #LightCoral {
 
 ' ==================== EXTERNAL RESOURCES ====================
 database "Temp Script\n(/tmp/*.py)" as temp_files
-database "seccomp-profile.json" as seccomp
 cloud "Dockerfile.sandbox" as dockerfile
 
 ' ==================== RELATIONSHIPS ====================
@@ -105,7 +104,6 @@ semaphore --> exec_config : max_concurrent_tasks
 
 docker_runner --> docker_container : docker run
 docker_runner --> temp_files : write script
-docker_runner --> seccomp : load profile
 
 storage_interface <|.. memory_storage
 memory_storage --> task_model
@@ -123,7 +121,7 @@ note right of docker_runner
   - Builds docker run command
   - Manages container lifecycle
   - Handles container kill
-  - Uses seccomp profile
+  - Uses Docker default seccomp
 end note
 
 note right of rate_limiter
