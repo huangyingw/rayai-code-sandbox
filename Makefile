@@ -38,9 +38,9 @@ run: check-docker
 	@echo "API docs: http://localhost:8000/docs"
 	@./venv/bin/python main.py
 
-# Run unit tests
-test-unit:
-	@./venv/bin/pytest tests/ -v
+# Run unit tests (requires Docker)
+test-unit: check-docker
+	@PYTHONPATH=. ./venv/bin/pytest tests/ -v
 
 # Run security tests (requires server)
 test-security:
