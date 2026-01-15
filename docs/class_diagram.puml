@@ -207,7 +207,7 @@ note right of DockerRunner
   --memory=128m
   --pids-limit=50
   --user=nobody
-  seccomp profile
+  (Docker default seccomp)
 end note
 
 note right of SandboxExecutor
