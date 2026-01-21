@@ -29,12 +29,26 @@ async def test_code(name: str, code: str, expected_behavior: str):
             f"{BASE_URL}/execute",
             json={"code": code}
         )
+
+        # Handle error responses (e.g., rate limiting)
+        if response.status_code != 200:
+            print(f"\nResult:")
+            print(f"  HTTP Error: {response.status_code}")
+            error_data = response.json()
+            print(f"  Detail: {error_data.get('detail', 'Unknown error')}")
+            return
+
         task_id = response.json()["task_id"]
         print(f"Task ID: {task_id}")
 
         # Wait for completion
+        result = None
         for _ in range(30):  # Max 30 seconds
             response = await client.get(f"{BASE_URL}/tasks/{task_id}")
+            if response.status_code != 200:
+                print(f"\nResult:")
+                print(f"  HTTP Error: {response.status_code}")
+                return
             result = response.json()
             if result["status"] not in ("pending", "running"):
                 break
@@ -42,13 +56,13 @@ async def test_code(name: str, code: str, expected_behavior: str):
 
         print(f"\nResult:")
         print(f"  Status: {result['status']}")
-        if result["stdout"]:
+        if result.get("stdout"):
             print(f"  Stdout: {result['stdout'][:200]}...")
-        if result["stderr"]:
+        if result.get("stderr"):
             print(f"  Stderr: {result['stderr'][:200]}...")
-        if result["error_message"]:
+        if result.get("error_message"):
             print(f"  Error: {result['error_message']}")
-        print(f"  Exit Code: {result['exit_code']}")
+        print(f"  Exit Code: {result.get('exit_code')}")
 
 
 async def run_tests():
@@ -59,12 +73,16 @@ async def run_tests():
     print("\nMake sure the server is running: python main.py")
     print("Press Ctrl+C to stop\n")
 
+    # Delay between tests to avoid rate limiting
+    test_delay = 2.0  # seconds
+
     # Test 1: Valid code
     await test_code(
         "Valid Code - Hello World",
         'print("Hello, World!")',
         "Should execute successfully and print output"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 2: Valid code with loop
     await test_code(
@@ -75,6 +93,7 @@ for i in range(5):
 ''',
         "Should execute successfully and print 0-4"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 3: Fork bomb attempt
     await test_code(
@@ -86,6 +105,7 @@ while True:
 ''',
         "Should BLOCK: os module is not allowed"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 4: Infinite loop
     await test_code(
@@ -96,6 +116,7 @@ while True:
 ''',
         "Should TIMEOUT: killed after 10 seconds"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 5: Memory bomb
     await test_code(
@@ -108,6 +129,7 @@ for i in range(1024 * 1024 * 100):
 ''',
         "Should KILL: process killed due to memory limit"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 6: File system access
     await test_code(
@@ -118,6 +140,7 @@ with open("/etc/passwd", "r") as f:
 ''',
         "Should BLOCK: open() is not defined"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 7: Network access
     await test_code(
@@ -129,6 +152,7 @@ s.connect(("google.com", 80))
 ''',
         "Should BLOCK: socket module is not allowed"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 8: Subprocess execution
     await test_code(
@@ -139,6 +163,7 @@ subprocess.run(["ls", "-la", "/"])
 ''',
         "Should BLOCK: subprocess module is not allowed"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 9: eval/exec
     await test_code(
@@ -148,6 +173,7 @@ eval("print('pwned')")
 ''',
         "Should BLOCK: eval() is not defined"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 10: Import bypass attempt
     await test_code(
@@ -158,6 +184,7 @@ os.system('whoami')
 ''',
         "Should BLOCK: os import is blocked"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 11: Builtins manipulation
     await test_code(
@@ -168,6 +195,7 @@ builtins.open("/etc/passwd")
 ''',
         "Should BLOCK: builtins module is not allowed"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 12: Exception with stack trace
     await test_code(
@@ -183,6 +211,7 @@ foo()
 ''',
         "Should FAIL: with error message"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 13: Syntax error
     await test_code(
@@ -193,6 +222,7 @@ def broken(
 ''',
         "Should FAIL: syntax error"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 14: Large output
     await test_code(
@@ -203,6 +233,7 @@ for i in range(100000):
 ''',
         "Should TRUNCATE: output limited to 1MB"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 15: CPU-intensive computation
     await test_code(
@@ -218,6 +249,7 @@ print(fib(35))
 ''',
         "May TIMEOUT or complete depending on system"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 16: Safe math operations
     await test_code(
@@ -230,6 +262,7 @@ print(f"sin(0): {math.sin(0)}")
 ''',
         "Should SUCCEED: math module is allowed"
     )
+    await asyncio.sleep(test_delay)
 
     # Test 17: Safe data structures
     await test_code(
