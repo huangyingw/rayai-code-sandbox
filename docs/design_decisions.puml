@@ -1,0 +1,159 @@
+@startuml design_decisions
+title Code Executor Sandbox - Design Decisions & Trade-offs
+skinparam defaultTextAlignment left
+skinparam noteBackgroundColor #FFFFCC
+skinparam legendBackgroundColor #F5F5F5
+
+legend top
+  |= Decision |= Choice |= Alternatives Considered |
+  | Isolation | Docker containers | gVisor, Firecracker, nsjail, chroot |
+  | Docker API | CLI (subprocess) | Docker SDK (docker-py) |
+  | Security | Defense in Depth | Single layer |
+  | Storage | In-memory | Redis, PostgreSQL |
+  | Streaming | SSE | WebSocket, Long-polling |
+  | Module control | Whitelist | Blacklist |
+endlegend
+
+' ==================== DOCKER CLI vs SDK ====================
+package "Decision 1: Docker CLI vs SDK" as d1 #LightBlue {
+    note as n1
+      **Chosen: Docker CLI (subprocess)**
+
+      **Pros:**
+      + No additional dependencies
+      + Easier to debug (same commands as terminal)
+      + Better compatibility across Docker versions
+      + Simpler deployment
+
+      **Cons:**
+      - Slightly higher latency (~5ms)
+      - Need to parse CLI output
+
+      **Why not Docker SDK?**
+      * Adds docker-py dependency
+      * Version compatibility issues
+      * Overkill for simple run/kill operations
+      * CLI is more transparent for security audits
+    end note
+}
+
+' ==================== DEFENSE IN DEPTH ====================
+package "Decision 2: Defense in Depth (Two Layers)" as d2 #LightGreen {
+    note as n2
+      **Chosen: Docker + Python Sandbox**
+
+      **Layer 1: Docker Container**
+      * OS-level isolation (namespaces, cgroups)
+      * Network isolation (--network=none)
+      * Filesystem isolation (--read-only)
+      * Resource limits (memory, CPU, PIDs)
+
+      **Layer 2: Python Sandbox**
+      * Restricted builtins (no eval, exec, open)
+      * Module whitelist (only safe modules)
+      * Attribute blocking (__class__, __bases__)
+
+      **Why two layers?**
+      * Defense in depth principle
+      * If Docker escapes (CVE), Python layer still protects
+      * If Python sandbox bypassed, Docker contains damage
+      * Each layer catches different attack vectors
+    end note
+}
+
+' ==================== STORAGE ====================
+package "Decision 3: In-Memory Storage" as d3 #LightYellow {
+    note as n3
+      **Chosen: MemoryStorage (dict)**
+
+      **Pros:**
+      + Zero latency
+      + No external dependencies
+      + Simple to implement
+      + Sufficient for interview scope
+
+      **Trade-off:**
+      - Lost on restart
+      - Single server only
+
+      **Extensibility:**
+      TaskStorage is an abstract interface.
+      Can easily swap to:
+      * RedisStorage (for distributed)
+      * PostgresStorage (for persistence)
+    end note
+}
+
+' ==================== MODULE WHITELIST ====================
+package "Decision 4: Module Whitelist vs Blacklist" as d4 #LightCoral {
+    note as n4
+      **Chosen: Whitelist**
+
+      **Whitelist approach:**
+      * Explicitly allow: math, json, datetime, etc.
+      * Everything else is denied by default
+
+      **Why not blacklist?**
+      * Blacklist: block os, sys, subprocess...
+      * Problem: Cannot anticipate all dangerous modules
+      * New Python versions add new modules
+      * Risk of missing something
+
+      **Security principle:**
+      "Deny by default, allow explicitly"
+
+      **Current whitelist (22 modules):**
+      math, cmath, decimal, fractions, random,
+      statistics, itertools, functools, operator,
+      string, textwrap, datetime, calendar, time,
+      collections, heapq, bisect, array, copy,
+      pprint, enum, dataclasses, re, json
+    end note
+}
+
+' ==================== CONCURRENCY ====================
+package "Decision 5: Concurrency Control" as d5 #Lavender {
+    note as n5
+      **Chosen: asyncio.Semaphore**
+
+      **Why Semaphore?**
+      * Native Python async primitive
+      * Efficient queuing (tasks wait, not rejected)
+      * No external dependencies
+      * Configurable limit
+
+      **Behavior:**
+      * Default: 10 concurrent tasks
+      * Task 11+ waits in queue
+      * Fair ordering (FIFO)
+
+      **Rate Limiting: Token Bucket**
+      * 60 requests/minute per IP
+      * Burst allowance: 10 requests
+      * Gradual refill
+    end note
+}
+
+' ==================== STREAMING ====================
+package "Decision 6: SSE vs WebSocket" as d6 #PaleGreen {
+    note as n6
+      **Chosen: Server-Sent Events (SSE)**
+
+      **Pros:**
+      + HTTP-based (works with proxies, CDNs)
+      + Auto-reconnection built-in
+      + Simpler than WebSocket
+      + One-way is sufficient for output streaming
+
+      **Cons:**
+      - One-way only (server to client)
+      - No binary data support
+
+      **Why not WebSocket?**
+      * Overkill for one-way streaming
+      * Requires more complex client code
+      * Proxy/firewall issues more common
+    end note
+}
+
+@enduml
