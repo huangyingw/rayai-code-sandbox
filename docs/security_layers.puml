@@ -64,7 +64,7 @@ note right of L3
   Memory exhaustion
   Fork bombs
   Privilege escalation
-  Dangerous syscalls
+  Seccomp: 44+ syscalls blocked
 end note
 
 ' ==================== LAYER 4: PYTHON SANDBOX ====================
