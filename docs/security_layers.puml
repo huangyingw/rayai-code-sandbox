@@ -1,5 +1,4 @@
 @startuml security_layers
-!theme plain
 title Security Layers - Defense in Depth (Docker Required)
 skinparam componentStyle rectangle
 skinparam noteBackgroundColor #FFFFCC

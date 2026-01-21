@@ -1,5 +1,4 @@
 @startuml improvements
-!theme plain
 title Code Executor Sandbox - Design Review & Improvements
 
 skinparam componentStyle rectangle
@@ -84,6 +83,41 @@ note bottom of container_pool
   - ~100ms vs ~500ms start
   - Reuse for same user
   - Graceful scaling
+end note
+
+' ==================== ROBUSTNESS OPTIONAL IMPROVEMENTS ====================
+
+package "Robustness - Optional Improvements" as robustness_optional #LightBlue {
+    component "Graceful Shutdown" as graceful_shutdown #LightBlue
+    component "Task Cleanup" as task_cleanup #LightBlue
+    component "Request Timeout" as request_timeout #LightSkyBlue
+}
+
+note bottom of graceful_shutdown
+  **Priority: Medium**
+  **Description:**
+  - Wait for running tasks on shutdown
+  - SIGTERM/SIGINT signal handling
+  - Configurable shutdown timeout
+  - Prevent task interruption
+end note
+
+note bottom of task_cleanup
+  **Priority: Medium**
+  **Description:**
+  - Periodic cleanup of expired tasks
+  - Prevent memory leaks
+  - Configurable retention period
+  - Background cleanup task
+end note
+
+note bottom of request_timeout
+  **Priority: Low**
+  **Description:**
+  - API request-level timeout
+  - Prevent long-running requests
+  - Return 504 on timeout
+  - Configurable per endpoint
 end note
 
 @enduml

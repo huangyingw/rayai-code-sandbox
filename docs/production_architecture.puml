@@ -1,5 +1,4 @@
 @startuml production_architecture
-!theme plain
 title Code Executor Sandbox - Production Architecture (Suggested)
 
 skinparam componentStyle rectangle

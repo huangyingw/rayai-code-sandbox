@@ -1,5 +1,4 @@
 @startuml architecture
-!theme plain
 title Code Executor Sandbox - System Architecture (Docker Required)
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center

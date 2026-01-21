@@ -1,5 +1,4 @@
 @startuml sequence_execute
-!theme plain
 title Code Execution Flow (Docker Required)
 skinparam responseMessageBelowArrow true
 skinparam noteBackgroundColor #FFFFCC

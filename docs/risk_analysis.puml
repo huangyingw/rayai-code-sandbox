@@ -1,5 +1,4 @@
 @startuml risk_analysis
-!theme plain
 title Code Executor Sandbox - Risk Analysis & Mitigations
 
 skinparam componentStyle rectangle

@@ -1,5 +1,4 @@
 @startuml evaluation_matrix
-!theme plain
 title Code Executor Sandbox - Evaluation Matrix
 
 skinparam componentStyle rectangle

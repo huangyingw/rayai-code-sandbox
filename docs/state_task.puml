@@ -1,5 +1,4 @@
 @startuml state_task
-!theme plain
 title Task Status State Diagram
 skinparam stateBackgroundColor #FFFFCC
 skinparam stateBorderColor #999999

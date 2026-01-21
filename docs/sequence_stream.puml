@@ -1,5 +1,4 @@
 @startuml sequence_stream
-!theme plain
 title Streaming Output Flow (Server-Sent Events)
 skinparam responseMessageBelowArrow true
 skinparam noteBackgroundColor #FFFFCC

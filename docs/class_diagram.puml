@@ -1,5 +1,4 @@
 @startuml class_diagram
-!theme plain
 title Code Executor Sandbox - Class Diagram (Docker Required)
 skinparam classAttributeIconSize 0
 skinparam noteBackgroundColor #FFFFCC
