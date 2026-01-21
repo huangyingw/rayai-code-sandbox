@@ -1,123 +1,93 @@
 @startuml improvements
+!theme plain
 title Code Executor Sandbox - Design Review & Improvements
 
 skinparam componentStyle rectangle
-skinparam noteBackgroundColor #FFFFCC
-skinparam noteBorderColor #999999
+skinparam defaultTextAlignment center
+skinparam packageStyle frame
 
-' ==================== CURRENT vs IMPROVED ====================
+' Layout direction
+left to right direction
 
-package "Current Design" as current #LightGray {
-    component "In-Memory Storage" as mem_current #LightCoral
-    component "BackgroundTasks" as bg_current #LightCoral
-    component "No Authentication" as no_auth #LightCoral
-    component "Basic Health Check" as basic_health #LightYellow
-    component "No Metrics" as no_metrics #LightCoral
-    component "Cold Start Containers" as cold_start #LightYellow
+' ==================== ROW 1: Storage ====================
+package "Storage" as pkg_storage {
+    rectangle "Current" as cur_storage #LightCoral {
+        component "In-Memory\nStorage" as mem_current
+    }
+    rectangle "Improved" as imp_storage #LightGreen {
+        component "Redis/DB\nStorage" as redis_storage
+    }
+    cur_storage -right-> imp_storage : "Persistence\n& Scalability"
 }
 
-package "Suggested Improvements" as improved #LightGreen {
-    component "Redis/DB Storage" as redis_storage #LightGreen
-    component "Celery/RQ Queue" as task_queue #LightGreen
-    component "JWT/API Key Auth" as auth #LightGreen
-    component "Full Health Check" as full_health #LightGreen
-    component "Prometheus Metrics" as metrics #LightGreen
-    component "Container Pool" as container_pool #LightGreen
+' ==================== ROW 2: Task Queue ====================
+package "Task Processing" as pkg_queue {
+    rectangle "Current" as cur_queue #LightCoral {
+        component "BackgroundTasks\n(FastAPI)" as bg_current
+    }
+    rectangle "Improved" as imp_queue #LightGreen {
+        component "Celery/RQ\nQueue" as task_queue
+    }
+    cur_queue -right-> imp_queue : "Reliability\n& Distribution"
 }
 
-' Arrows showing improvements
-mem_current -right-> redis_storage : "Persistence\n& Scalability"
-bg_current -right-> task_queue : "Reliability\n& Distribution"
-no_auth -right-> auth : "Access Control"
-basic_health -right-> full_health : "Docker+Queue\nStatus"
-no_metrics -right-> metrics : "Observability"
-cold_start -right-> container_pool : "Reduce Latency"
-
-' ==================== IMPROVEMENT DETAILS ====================
-
-note bottom of redis_storage
-  **Benefits:**
-  - Task persistence across restarts
-  - Multiple server instances
-  - Task history & audit trail
-  - Faster than DB for streaming
-end note
-
-note bottom of task_queue
-  **Benefits:**
-  - Retry on failure
-  - Task prioritization
-  - Distributed workers
-  - Dead letter queue
-end note
-
-note bottom of auth
-  **Benefits:**
-  - Per-user rate limits
-  - Usage tracking
-  - API key rotation
-  - Audit logging
-end note
-
-note bottom of full_health
-  **Check:**
-  - Docker daemon alive
-  - Redis connection
-  - Worker count
-  - Queue depth
-  - Disk space
-end note
-
-note bottom of metrics
-  **Track:**
-  - Execution time histogram
-  - Success/failure rates
-  - Container lifecycle
-  - Resource usage
-  - Queue wait time
-end note
-
-note bottom of container_pool
-  **Benefits:**
-  - Pre-warmed containers
-  - ~100ms vs ~500ms start
-  - Reuse for same user
-  - Graceful scaling
-end note
-
-' ==================== ROBUSTNESS OPTIONAL IMPROVEMENTS ====================
-
-package "Robustness - Optional Improvements" as robustness_optional #LightBlue {
-    component "Graceful Shutdown" as graceful_shutdown #LightBlue
-    component "Task Cleanup" as task_cleanup #LightBlue
-    component "Request Timeout" as request_timeout #LightSkyBlue
+' ==================== ROW 3: Authentication ====================
+package "Authentication" as pkg_auth {
+    rectangle "Current" as cur_auth #LightCoral {
+        component "No\nAuthentication" as no_auth
+    }
+    rectangle "Improved" as imp_auth #LightGreen {
+        component "JWT/API Key\nAuth" as auth
+    }
+    cur_auth -right-> imp_auth : "Access Control\n& Audit"
 }
 
-note bottom of graceful_shutdown
-  **Priority: Medium**
-  **Description:**
-  - Wait for running tasks on shutdown
-  - SIGTERM/SIGINT signal handling
-  - Configurable shutdown timeout
-  - Prevent task interruption
-end note
+' ==================== ROW 4: Health Check ====================
+package "Health Check" as pkg_health {
+    rectangle "Current" as cur_health #LightYellow {
+        component "Basic\nHealth Check" as basic_health
+    }
+    rectangle "Improved" as imp_health #LightGreen {
+        component "Full Health\nCheck" as full_health
+    }
+    cur_health -right-> imp_health : "Docker+Queue\nStatus"
+}
 
-note bottom of task_cleanup
-  **Priority: Medium**
-  **Description:**
-  - Periodic cleanup of expired tasks
-  - Prevent memory leaks
-  - Configurable retention period
-  - Background cleanup task
-end note
+' ==================== ROW 5: Metrics ====================
+package "Observability" as pkg_metrics {
+    rectangle "Current" as cur_metrics #LightCoral {
+        component "No\nMetrics" as no_metrics
+    }
+    rectangle "Improved" as imp_metrics #LightGreen {
+        component "Prometheus\nMetrics" as metrics
+    }
+    cur_metrics -right-> imp_metrics : "Monitoring\n& Alerting"
+}
 
-note bottom of request_timeout
-  **Priority: Low**
-  **Description:**
-  - API request-level timeout
-  - Prevent long-running requests
-  - Return 504 on timeout
-  - Configurable per endpoint
-end note
+' ==================== ROW 6: Container ====================
+package "Container Startup" as pkg_container {
+    rectangle "Current" as cur_container #LightYellow {
+        component "Cold Start\n(~500ms)" as cold_start
+    }
+    rectangle "Improved" as imp_container #LightGreen {
+        component "Container Pool\n(~100ms)" as container_pool
+    }
+    cur_container -right-> imp_container : "5x Faster\nStartup"
+}
+
+' ==================== VERTICAL LAYOUT ====================
+pkg_storage -[hidden]down-> pkg_queue
+pkg_queue -[hidden]down-> pkg_auth
+pkg_auth -[hidden]down-> pkg_health
+pkg_health -[hidden]down-> pkg_metrics
+pkg_metrics -[hidden]down-> pkg_container
+
+' ==================== LEGEND ====================
+legend bottom
+  |= Color |= Meaning |
+  | <#LightCoral> | High Priority Improvement |
+  | <#LightYellow> | Medium Priority Improvement |
+  | <#LightGreen> | Suggested Solution |
+endlegend
 
 @enduml

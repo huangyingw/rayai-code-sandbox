@@ -50,8 +50,7 @@ package "Observability" as monitoring #LightCoral {
 
 ' ==================== SECURITY ====================
 package "Security" as security_tier #Wheat {
-    component "API Gateway\n(Rate Limit\n+ Auth)" as gateway
-    component "Secrets\n(Vault/KMS)" as secrets
+    component "API Gateway\n(Rate Limit + Auth)" as gateway
 }
 
 ' ==================== RELATIONSHIPS ====================

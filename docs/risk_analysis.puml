@@ -1,108 +1,115 @@
 @startuml risk_analysis
+!theme plain
 title Code Executor Sandbox - Risk Analysis & Mitigations
 
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
+skinparam packageStyle frame
 
-' Legend
-legend right
-  |= Color |= Severity |
-  | <#FF6B6B> | High Risk |
-  | <#FFD93D> | Medium Risk |
-  | <#6BCB77> | Mitigated |
+' ==================== LEGEND ====================
+legend top
+  |= Color |= Status |
+  | <#6BCB77> | ✓ Mitigated |
+  | <#FFD93D> | △ Medium Risk |
+  | <#FF6B6B> | ✗ High Risk |
 endlegend
 
-' ==================== SECURITY RISKS ====================
-package "Security Risks" as sec_risks {
-    component "Container Escape" as escape #6BCB77
-    component "Resource Exhaustion\n(Fork Bomb)" as dos #6BCB77
-    component "Network Attack" as network #6BCB77
-    component "Sandbox Bypass\n(__class__ chain)" as sandbox_bypass #6BCB77
-    component "No Authentication" as no_auth #FF6B6B
-    component "Insufficient Logging" as no_log #FFD93D
+' ==================== SECTION 1: MITIGATED RISKS ====================
+package "已缓解的安全风险 (Mitigated)" as mitigated_pkg #EEFFEE {
+
+    rectangle "容器逃逸\nContainer Escape" as r1 #6BCB77 {
+    }
+    rectangle "资源耗尽\nFork Bomb/DoS" as r2 #6BCB77 {
+    }
+    rectangle "网络攻击\nNetwork Attack" as r3 #6BCB77 {
+    }
+    rectangle "沙箱绕过\n__class__ chain" as r4 #6BCB77 {
+    }
+
+    note bottom of r1
+      **防护措施:**
+      Docker --cap-drop=ALL
+      --security-opt=no-new-privileges
+    end note
+
+    note bottom of r2
+      **防护措施:**
+      --memory=128m
+      --pids-limit=50
+      --cpus=0.5
+    end note
+
+    note bottom of r3
+      **防护措施:**
+      --network=none
+      完全网络隔离
+    end note
+
+    note bottom of r4
+      **防护措施:**
+      模块白名单
+      属性阻止列表
+      模式扫描器
+    end note
 }
 
-' ==================== RELIABILITY RISKS ====================
-package "Reliability Risks" as rel_risks {
-    component "Task Loss on\nServer Restart" as task_loss #FF6B6B
-    component "Single Point\nof Failure" as spof #FF6B6B
-    component "No Task Retry" as no_retry #FFD93D
-    component "Cold Start\nLatency" as cold_start #FFD93D
-    component "Memory Pressure\nUnder Load" as memory #FFD93D
+' ==================== SECTION 2: HIGH RISKS ====================
+package "高优先级风险 (High Priority)" as high_pkg #FFEEEE {
+
+    rectangle "无认证\nNo Auth" as h1 #FF6B6B {
+    }
+    rectangle "任务丢失\nTask Loss" as h2 #FF6B6B {
+    }
+    rectangle "单点故障\nSingle Point" as h3 #FF6B6B {
+    }
+
+    note bottom of h1
+      **问题:** 任何人可执行代码
+      **建议:** 添加 JWT/API Key
+    end note
+
+    note bottom of h2
+      **问题:** 重启后任务丢失
+      **建议:** 添加 Redis 持久化
+    end note
+
+    note bottom of h3
+      **问题:** 单实例无法扩展
+      **建议:** 添加负载均衡
+    end note
 }
 
-' ==================== OPERATIONAL RISKS ====================
-package "Operational Risks" as ops_risks {
-    component "No Metrics\n/Monitoring" as no_metrics #FFD93D
-    component "Manual Scaling" as manual_scale #FFD93D
-    component "No Alerting" as no_alert #FFD93D
-    component "Docker Daemon\nFailure" as docker_fail #FFD93D
+' ==================== SECTION 3: MEDIUM RISKS ====================
+package "中优先级风险 (Medium Priority)" as medium_pkg #FFFFEE {
+
+    rectangle "无监控\nNo Metrics" as m1 #FFD93D {
+    }
+    rectangle "无重试\nNo Retry" as m2 #FFD93D {
+    }
+    rectangle "冷启动\nCold Start" as m3 #FFD93D {
+    }
+    rectangle "日志不足\nInsufficient Log" as m4 #FFD93D {
+    }
+
+    note bottom of m1
+      **建议:** Prometheus + Grafana
+    end note
+
+    note bottom of m2
+      **建议:** Celery 任务队列
+    end note
+
+    note bottom of m3
+      **建议:** 容器池预热
+    end note
+
+    note bottom of m4
+      **建议:** 审计日志
+    end note
 }
 
-' ==================== MITIGATIONS (IMPLEMENTED) ====================
-package "Mitigations (Implemented)" as mitigations #LightGreen {
-    component "Docker Isolation\n+ --network=none\n+ --cap-drop=ALL\n+ --read-only" as docker_mitigation
-    component "Resource Limits\n+ --memory=128m\n+ --pids-limit=50\n+ --cpus=0.5" as resource_mitigation
-    component "Python Sandbox\n+ Module Whitelist\n+ Attribute Blocking\n+ Pattern Scanner" as python_mitigation
-    component "Concurrency Limit\n(Semaphore)" as concurrency_mitigation
-    component "Rate Limiting\n(60 req/min)" as rate_mitigation
-}
-
-' ==================== SUGGESTED MITIGATIONS ====================
-package "Suggested Mitigations" as suggested #LightBlue {
-    component "Add Redis\nfor Persistence" as add_redis
-    component "Add Auth\n(JWT/API Key)" as add_auth
-    component "Add Prometheus\n+ Grafana" as add_monitoring
-    component "Add Celery\nTask Queue" as add_queue
-    component "Add Container\nPool" as add_pool
-    component "Add Audit\nLogging" as add_audit
-}
-
-' ==================== RELATIONSHIPS ====================
-escape --> docker_mitigation : mitigated by
-dos --> resource_mitigation : mitigated by
-network --> docker_mitigation : mitigated by
-sandbox_bypass --> python_mitigation : mitigated by
-
-no_auth ..> add_auth : requires
-task_loss ..> add_redis : requires
-no_metrics ..> add_monitoring : requires
-no_retry ..> add_queue : requires
-cold_start ..> add_pool : requires
-no_log ..> add_audit : requires
-
-memory --> concurrency_mitigation : limited by
-memory --> rate_mitigation : limited by
-
-' ==================== PRIORITY NOTES ====================
-note right of no_auth
-  **HIGH PRIORITY**
-  Anyone can execute code
-  No usage tracking
-  No rate limit per user
-end note
-
-note right of task_loss
-  **HIGH PRIORITY**
-  Tasks lost on restart
-  Cannot recover state
-  No task history
-end note
-
-note bottom of add_redis
-  **Implementation:**
-  1. Add redis-py
-  2. Implement RedisStorage
-  3. Store task state + output
-  4. Add TTL for cleanup
-end note
-
-note bottom of add_auth
-  **Implementation:**
-  1. Add API key header
-  2. Store keys in DB/Vault
-  3. Per-key rate limits
-  4. Key rotation support
-end note
+' ==================== LAYOUT ====================
+mitigated_pkg -[hidden]down-> high_pkg
+high_pkg -[hidden]down-> medium_pkg
 
 @enduml
