@@ -1,0 +1,93 @@
+@startuml evaluation_matrix
+!theme plain
+title Code Executor Sandbox - Evaluation Matrix
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' Legend
+legend right
+  |= Symbol |= Status |
+  | <#6BCB77> ✓ | Implemented |
+  | <#FFD93D> △ | Partial |
+  | <#FF6B6B> ✗ | Missing |
+endlegend
+
+' ==================== CORRECTNESS ====================
+package "1. Correctness" as correctness #LightBlue {
+    component "Valid Code Execution\n✓ Works correctly" as correct_exec #6BCB77
+    component "Syntax Validation\n✓ Pre-compile check" as syntax_check #6BCB77
+    component "Unicode Support\n✓ UTF-8 encoding" as unicode #6BCB77
+    component "Streaming Output\n✓ Real-time SSE" as streaming #6BCB77
+    component "Error Messages\n✓ Clear feedback" as errors #6BCB77
+    component "Exit Code Handling\n✓ Signal interpretation" as exit_code #6BCB77
+}
+
+' ==================== ROBUSTNESS ====================
+package "2. Robustness" as robustness #LightGreen {
+    component "Timeout Handling\n✓ 10s limit + kill" as timeout #6BCB77
+    component "Memory Limit\n✓ 128MB container" as memory #6BCB77
+    component "Recursion Limit\n✓ 100 depth" as recursion #6BCB77
+    component "Concurrency Limit\n✓ Semaphore (10)" as concurrency #6BCB77
+    component "Output Truncation\n✓ 1MB max" as output_limit #6BCB77
+    component "Rate Limiting\n✓ 60 req/min" as rate_limit #6BCB77
+    component "Task Retry\n✗ Not implemented" as retry #FF6B6B
+    component "Graceful Shutdown\n△ Basic" as shutdown #FFD93D
+}
+
+' ==================== SECURITY ====================
+package "3. Security" as security #LightCoral {
+    component "Container Isolation\n✓ Docker mandatory" as container #6BCB77
+    component "Network Isolation\n✓ --network=none" as network #6BCB77
+    component "Filesystem\n✓ --read-only" as filesystem #6BCB77
+    component "Capabilities\n✓ --cap-drop=ALL" as caps #6BCB77
+    component "Module Whitelist\n✓ Safe modules only" as whitelist #6BCB77
+    component "Attribute Blocking\n✓ __class__ etc." as attr_block #6BCB77
+    component "Authentication\n✗ No auth" as auth #FF6B6B
+    component "Audit Logging\n△ Basic logging" as audit #FFD93D
+    component "Input Sanitization\n✓ Code validation" as input #6BCB77
+}
+
+' ==================== DESIGN ====================
+package "4. Design" as design #Lavender {
+    component "Clean Architecture\n✓ Layered design" as clean_arch #6BCB77
+    component "Separation of\nConcerns ✓" as soc #6BCB77
+    component "Configuration\n✓ Dataclass config" as config #6BCB77
+    component "Dependency\nInjection ✓" as di #6BCB77
+    component "Async/Await\n✓ Fully async" as async_design #6BCB77
+    component "Storage Interface\n✓ Pluggable" as storage #6BCB77
+    component "Scalability\n△ Single instance" as scalability #FFD93D
+    component "Persistence\n✗ Memory only" as persistence #FF6B6B
+    component "Observability\n✗ No metrics" as observability #FF6B6B
+}
+
+' ==================== SCORES ====================
+note right of correctness
+  **Score: 6/6**
+  All requirements met
+  for code execution
+end note
+
+note right of robustness
+  **Score: 6/8**
+  Missing:
+  - Task retry
+  - Graceful shutdown
+end note
+
+note right of security
+  **Score: 7/9**
+  Missing:
+  - Authentication
+  - Full audit logging
+end note
+
+note right of design
+  **Score: 6/9**
+  Missing:
+  - Multi-instance
+  - Persistence
+  - Metrics/Monitoring
+end note
+
+@enduml

@@ -1,0 +1,127 @@
+@startuml production_architecture
+!theme plain
+title Code Executor Sandbox - Production Architecture (Suggested)
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' ==================== EXTERNAL ====================
+actor "Client" as client
+cloud "Load Balancer\n(nginx/ALB)" as lb #LightBlue
+
+' ==================== API TIER ====================
+package "API Tier (Stateless)" as api_tier #LightCyan {
+    component "API Server 1" as api1
+    component "API Server 2" as api2
+    component "API Server N" as api3
+}
+
+' ==================== QUEUE TIER ====================
+package "Message Queue" as queue_tier #LightYellow {
+    queue "Task Queue\n(Redis/RabbitMQ)" as task_queue
+    queue "Priority Queue\n(High/Normal/Low)" as priority_queue
+    queue "Dead Letter Queue" as dlq
+}
+
+' ==================== WORKER TIER ====================
+package "Worker Tier (Celery/RQ)" as worker_tier #LightGreen {
+    component "Worker 1" as worker1
+    component "Worker 2" as worker2
+    component "Worker N" as worker3
+
+    package "Container Pool" as pool {
+        component "Pre-warmed\nContainers" as containers
+    }
+}
+
+' ==================== STORAGE TIER ====================
+package "Storage Tier" as storage_tier #Lavender {
+    database "Redis\n(Task State\n+ Output Buffer)" as redis
+    database "PostgreSQL\n(Task History\n+ Audit Log)" as postgres
+    storage "S3/MinIO\n(Large Outputs)" as s3
+}
+
+' ==================== MONITORING ====================
+package "Observability" as monitoring #LightCoral {
+    component "Prometheus" as prometheus
+    component "Grafana" as grafana
+    component "AlertManager" as alertmanager
+    component "Logging\n(ELK/Loki)" as logging
+}
+
+' ==================== SECURITY ====================
+package "Security" as security_tier #Wheat {
+    component "API Gateway\n(Rate Limit\n+ Auth)" as gateway
+    component "Secrets\n(Vault/KMS)" as secrets
+}
+
+' ==================== RELATIONSHIPS ====================
+client --> lb
+lb --> gateway
+gateway --> api_tier
+
+api1 --> task_queue
+api2 --> task_queue
+api3 --> task_queue
+
+task_queue --> priority_queue
+priority_queue --> worker_tier
+dlq <-- worker_tier : failed tasks
+
+worker1 --> containers
+worker2 --> containers
+worker3 --> containers
+
+api_tier --> redis : read status
+worker_tier --> redis : write status
+worker_tier --> postgres : audit log
+worker_tier --> s3 : large outputs
+
+prometheus --> api_tier : scrape
+prometheus --> worker_tier : scrape
+prometheus --> grafana
+alertmanager --> grafana
+
+api_tier --> logging
+worker_tier --> logging
+
+' ==================== NOTES ====================
+note right of lb
+  **Scalability**
+  - Horizontal scaling
+  - Auto-scaling groups
+  - Health check routing
+end note
+
+note right of priority_queue
+  **Priority Levels**
+  - High: Premium users
+  - Normal: Regular users
+  - Low: Background jobs
+end note
+
+note right of containers
+  **Container Pool**
+  - Pre-create N containers
+  - Reuse after cleanup
+  - Scale based on demand
+  - ~5x faster execution
+end note
+
+note bottom of redis
+  **Redis Usage**
+  - Task state (TTL: 1h)
+  - Output streaming
+  - Rate limit counters
+  - Session cache
+end note
+
+note bottom of postgres
+  **PostgreSQL Usage**
+  - Task history (30 days)
+  - User quotas
+  - Audit logs
+  - Analytics
+end note
+
+@enduml

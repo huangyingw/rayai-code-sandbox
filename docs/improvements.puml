@@ -1,0 +1,89 @@
+@startuml improvements
+!theme plain
+title Code Executor Sandbox - Design Review & Improvements
+
+skinparam componentStyle rectangle
+skinparam noteBackgroundColor #FFFFCC
+skinparam noteBorderColor #999999
+
+' ==================== CURRENT vs IMPROVED ====================
+
+package "Current Design" as current #LightGray {
+    component "In-Memory Storage" as mem_current #LightCoral
+    component "BackgroundTasks" as bg_current #LightCoral
+    component "No Authentication" as no_auth #LightCoral
+    component "Basic Health Check" as basic_health #LightYellow
+    component "No Metrics" as no_metrics #LightCoral
+    component "Cold Start Containers" as cold_start #LightYellow
+}
+
+package "Suggested Improvements" as improved #LightGreen {
+    component "Redis/DB Storage" as redis_storage #LightGreen
+    component "Celery/RQ Queue" as task_queue #LightGreen
+    component "JWT/API Key Auth" as auth #LightGreen
+    component "Full Health Check" as full_health #LightGreen
+    component "Prometheus Metrics" as metrics #LightGreen
+    component "Container Pool" as container_pool #LightGreen
+}
+
+' Arrows showing improvements
+mem_current -right-> redis_storage : "Persistence\n& Scalability"
+bg_current -right-> task_queue : "Reliability\n& Distribution"
+no_auth -right-> auth : "Access Control"
+basic_health -right-> full_health : "Docker+Queue\nStatus"
+no_metrics -right-> metrics : "Observability"
+cold_start -right-> container_pool : "Reduce Latency"
+
+' ==================== IMPROVEMENT DETAILS ====================
+
+note bottom of redis_storage
+  **Benefits:**
+  - Task persistence across restarts
+  - Multiple server instances
+  - Task history & audit trail
+  - Faster than DB for streaming
+end note
+
+note bottom of task_queue
+  **Benefits:**
+  - Retry on failure
+  - Task prioritization
+  - Distributed workers
+  - Dead letter queue
+end note
+
+note bottom of auth
+  **Benefits:**
+  - Per-user rate limits
+  - Usage tracking
+  - API key rotation
+  - Audit logging
+end note
+
+note bottom of full_health
+  **Check:**
+  - Docker daemon alive
+  - Redis connection
+  - Worker count
+  - Queue depth
+  - Disk space
+end note
+
+note bottom of metrics
+  **Track:**
+  - Execution time histogram
+  - Success/failure rates
+  - Container lifecycle
+  - Resource usage
+  - Queue wait time
+end note
+
+note bottom of container_pool
+  **Benefits:**
+  - Pre-warmed containers
+  - ~100ms vs ~500ms start
+  - Reuse for same user
+  - Graceful scaling
+end note
+
+@enduml
