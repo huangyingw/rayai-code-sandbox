@@ -1,114 +1,47 @@
 @startuml risk_analysis
 title Code Executor Sandbox - Risk Analysis & Mitigations
 
-skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
-skinparam packageStyle frame
+skinparam rectangleBorderThickness 2
+skinparam noteFontSize 10
+skinparam wrapWidth 120
+
+' Force left-to-right layout
+left to right direction
 
 ' ==================== LEGEND ====================
 legend top
-  |= Color |= Status |
-  | <#6BCB77> | ✓ Mitigated |
-  | <#FFD93D> | △ Medium Risk |
-  | <#FF6B6B> | ✗ High Risk |
+  |= Color |= Priority |= Status |
+  | <#6BCB77> | - | ✓ Mitigated |
+  | <#FFD93D> | Medium | △ Needs Work |
+  | <#FF6B6B> | High | ✗ Not Addressed |
 endlegend
 
-' ==================== SECTION 1: MITIGATED RISKS ====================
-package "Mitigated Security Risks" as mitigated_pkg #EEFFEE {
-
-    rectangle "Container Escape" as r1 #6BCB77 {
-    }
-    rectangle "Resource Exhaustion\nFork Bomb/DoS" as r2 #6BCB77 {
-    }
-    rectangle "Network Attack" as r3 #6BCB77 {
-    }
-    rectangle "Sandbox Bypass\n__class__ chain" as r4 #6BCB77 {
-    }
-
-    note bottom of r1
-      **Mitigations:**
-      Docker --cap-drop=ALL
-      --security-opt=no-new-privileges
-    end note
-
-    note bottom of r2
-      **Mitigations:**
-      --memory=128m
-      --pids-limit=50
-      --cpus=0.5
-    end note
-
-    note bottom of r3
-      **Mitigations:**
-      --network=none
-      Complete network isolation
-    end note
-
-    note bottom of r4
-      **Mitigations:**
-      Module whitelist
-      Attribute blocklist
-      Pattern scanner
-    end note
+' ==================== MITIGATED RISKS (GREEN) ====================
+package "MITIGATED" as pkg_mitigated #EEFFEE {
+    rectangle "Container Escape\n<size:9>--cap-drop=ALL</size>" as r1 #6BCB77
+    rectangle "Resource Exhaustion\n<size:9>--memory=128m</size>" as r2 #6BCB77
+    rectangle "Network Attack\n<size:9>--network=none</size>" as r3 #6BCB77
+    rectangle "Sandbox Bypass\n<size:9>Module whitelist</size>" as r4 #6BCB77
 }
 
-' ==================== SECTION 2: HIGH RISKS ====================
-package "High Priority Risks" as high_pkg #FFEEEE {
-
-    rectangle "No Authentication" as h1 #FF6B6B {
-    }
-    rectangle "Task Loss" as h2 #FF6B6B {
-    }
-    rectangle "Single Point\nof Failure" as h3 #FF6B6B {
-    }
-
-    note bottom of h1
-      **Issue:** Anyone can execute code
-      **Suggestion:** Add JWT/API Key
-    end note
-
-    note bottom of h2
-      **Issue:** Tasks lost on restart
-      **Suggestion:** Add Redis persistence
-    end note
-
-    note bottom of h3
-      **Issue:** Single instance, no scaling
-      **Suggestion:** Add load balancer
-    end note
+' ==================== HIGH RISKS (RED) ====================
+package "HIGH RISK" as pkg_high #FFEEEE {
+    rectangle "No Authentication\n<size:9>→ Add JWT/API Key</size>" as h1 #FF6B6B
+    rectangle "Task Loss on Restart\n<size:9>→ Add Redis</size>" as h2 #FF6B6B
+    rectangle "Single Point of Failure\n<size:9>→ Add Load Balancer</size>" as h3 #FF6B6B
 }
 
-' ==================== SECTION 3: MEDIUM RISKS ====================
-package "Medium Priority Risks" as medium_pkg #FFFFEE {
-
-    rectangle "No Metrics" as m1 #FFD93D {
-    }
-    rectangle "No Retry" as m2 #FFD93D {
-    }
-    rectangle "Cold Start" as m3 #FFD93D {
-    }
-    rectangle "Insufficient\nLogging" as m4 #FFD93D {
-    }
-
-    note bottom of m1
-      **Suggestion:** Prometheus + Grafana
-    end note
-
-    note bottom of m2
-      **Suggestion:** Celery task queue
-    end note
-
-    note bottom of m3
-      **Suggestion:** Container pool warmup
-    end note
-
-    note bottom of m4
-      **Suggestion:** Audit logging
-    end note
+' ==================== MEDIUM RISKS (YELLOW) ====================
+package "MEDIUM RISK" as pkg_medium #FFFFEE {
+    rectangle "No Metrics\n<size:9>→ Prometheus</size>" as m1 #FFD93D
+    rectangle "No Retry\n<size:9>→ Celery Queue</size>" as m2 #FFD93D
+    rectangle "Cold Start\n<size:9>→ Container Pool</size>" as m3 #FFD93D
+    rectangle "Insufficient Logging\n<size:9>→ Audit Log</size>" as m4 #FFD93D
 }
 
 ' ==================== LAYOUT ====================
-mitigated_pkg -[hidden]down-> high_pkg
-high_pkg -[hidden]down-> medium_pkg
+pkg_mitigated -[hidden]right-> pkg_high
+pkg_high -[hidden]right-> pkg_medium
 
 @enduml
