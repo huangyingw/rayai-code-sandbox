@@ -1,0 +1,122 @@
+@startuml agent_collaboration
+title Multi-Agent Collaboration Pattern - Task Delegation & Callback
+
+skinparam sequenceArrowThickness 2
+skinparam participantPadding 20
+skinparam boxPadding 10
+
+' Participants
+box "Node 1" #LightGreen
+    participant "Agent A\n(Feature Dev)" as A #PaleGreen
+end box
+
+box "Shared State" #LightYellow
+    database "Object Store\n(Ray)" as OS
+    queue "Task Queue" as Q
+end box
+
+box "Node 2" #LightCoral
+    participant "Agent B\n(DevOps)" as B #LightPink
+end box
+
+' Main flow
+== Phase 1: Agent A Working on Data Download Feature ==
+
+A -> A : Running Claude Code\nImplementing data download
+
+note right of A
+  **Agent A's Task**
+  Implement data download feature
+  using Claude Code
+end note
+
+A -> A : Discover: Need containerization\nfor production deployment
+
+== Phase 2: Task Delegation ==
+
+A -> OS : **put(task_context)**\n- Current code state\n- Requirements\n- Callback reference
+activate OS
+OS --> A : task_ref (ObjectRef)
+deactivate OS
+
+A -> Q : **submit_task(task_ref)**\nDelegate to Agent B
+activate Q
+
+note over A, Q
+  **Task Context Contains:**
+  • Source code snapshot
+  • Dockerfile requirements
+  • Tests to pass
+  • Callback: agent_a.on_containerization_done.remote()
+end note
+
+Q -> B : **dispatch task**
+deactivate Q
+activate B
+
+A -> A : Continue other work\n(non-blocking)
+
+note right of A #LightBlue
+  Agent A doesn't block.
+  Can work on other
+  parts of the feature.
+end note
+
+== Phase 3: Agent B Working ==
+
+B -> OS : **get(task_ref)**\nFetch task context
+activate OS
+OS --> B : task_context
+deactivate OS
+
+B -> B : Running Claude Code\nImplementing containerization
+
+note left of B
+  **Agent B's Work**
+  • Create Dockerfile
+  • Configure docker-compose
+  • Add CI/CD pipeline
+  • Write container tests
+end note
+
+B -> B : Test container locally
+B -> B : Verify all tests pass
+
+== Phase 4: Completion & Callback ==
+
+B -> OS : **put(result)**\n- Dockerfile\n- docker-compose.yml\n- Updated code
+activate OS
+OS --> B : result_ref
+deactivate OS
+
+B -> A : **agent_a.on_containerization_done.remote(result_ref)**\nCallback with result
+activate A
+deactivate B
+
+note over B, A #LightGreen
+  **Callback Pattern**
+  Agent B notifies Agent A
+  by calling A's method
+  with the result reference
+end note
+
+A -> OS : **get(result_ref)**
+activate OS
+OS --> A : containerization_result
+deactivate OS
+
+A -> A : Integrate containerization\ninto feature branch
+
+A -> A : Continue feature development\nwith containerized code
+
+== Result ==
+
+note over A
+  **Final State**
+  Agent A has:
+  ✓ Data download feature
+  ✓ Containerization (from B)
+  ✓ Ready for deployment
+end note
+
+@enduml
