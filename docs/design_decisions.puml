@@ -1,191 +1,69 @@
 @startuml design_decisions
-title Code Executor Sandbox - Design Decisions & Trade-offs
-skinparam defaultTextAlignment left
-skinparam noteBackgroundColor #FFFFCC
-skinparam legendBackgroundColor #F5F5F5
+title Design Decisions
 
-legend top
-  |= Decision |= Choice |= Alternatives Considered |
-  | Isolation | Docker containers | gVisor, Firecracker, nsjail, chroot |
-  | Docker API | CLI (subprocess) | Docker SDK (docker-py) |
-  | Security | Defense in Depth | Single layer |
-  | Storage | In-memory | Redis, PostgreSQL |
-  | Streaming | SSE | WebSocket, Long-polling |
-  | Module control | Whitelist | Blacklist |
-endlegend
+skinparam defaultTextAlignment center
+skinparam rectangleBackgroundColor #F8F8F8
 
-' ==================== DOCKER CLI vs SDK ====================
-package "Decision 1: Docker CLI vs SDK" as d1 #LightBlue {
-    note as n1
-      **Chosen: Docker CLI (subprocess)**
-
-      **Pros:**
-      + No additional dependencies
-      + Easier to debug (same commands as terminal)
-      + Better compatibility across Docker versions
-      + Simpler deployment
-
-      **Cons:**
-      - Slightly higher latency (~5ms)
-      - Need to parse CLI output
-
-      **Why not Docker SDK?**
-      * Adds docker-py dependency
-      * Version compatibility issues
-      * Overkill for simple run/kill operations
-      * CLI is more transparent for security audits
-    end note
+' ==================== ROW 1 ====================
+rectangle "**Isolation**\nDocker Containers" as r1 #LightBlue {
+  note as n1
+    Alternatives: gVisor, Firecracker
+    Reason: Simple, widely adopted
+  end note
 }
 
-' ==================== DEFENSE IN DEPTH ====================
-package "Decision 2: Defense in Depth (Two Layers)" as d2 #LightGreen {
-    note as n2
-      **Chosen: Docker + Python Sandbox**
-
-      **Layer 1: Docker Container**
-      * OS-level isolation (namespaces, cgroups)
-      * Network isolation (--network=none)
-      * Filesystem isolation (--read-only)
-      * Resource limits (memory, CPU, PIDs)
-
-      **Layer 2: Python Sandbox**
-      * Restricted builtins (no eval, exec, open)
-      * Module whitelist (only safe modules)
-      * Attribute blocking (__class__, __bases__)
-
-      **Why two layers?**
-      * Defense in depth principle
-      * If Docker escapes (CVE), Python layer still protects
-      * If Python sandbox bypassed, Docker contains damage
-      * Each layer catches different attack vectors
-    end note
+rectangle "**Security**\nDefense in Depth" as r2 #LightGreen {
+  note as n2
+    Layer 1: Docker (OS isolation)
+    Layer 2: Python sandbox
+  end note
 }
 
-' ==================== STORAGE ====================
-package "Decision 3: In-Memory Storage" as d3 #LightYellow {
-    note as n3
-      **Chosen: MemoryStorage (dict)**
-
-      **Pros:**
-      + Zero latency
-      + No external dependencies
-      + Simple to implement
-      + Sufficient for interview scope
-
-      **Trade-off:**
-      - Lost on restart
-      - Single server only
-
-      **Extensibility:**
-      TaskStorage is an abstract interface.
-      Can easily swap to:
-      * RedisStorage (for distributed)
-      * PostgresStorage (for persistence)
-    end note
+rectangle "**Module Control**\nWhitelist" as r3 #LightCoral {
+  note as n3
+    Deny by default
+    22 safe modules allowed
+  end note
 }
 
-' ==================== MODULE WHITELIST ====================
-package "Decision 4: Module Whitelist vs Blacklist" as d4 #LightCoral {
-    note as n4
-      **Chosen: Whitelist**
-
-      **Whitelist approach:**
-      * Explicitly allow: math, json, datetime, etc.
-      * Everything else is denied by default
-
-      **Why not blacklist?**
-      * Blacklist: block os, sys, subprocess...
-      * Problem: Cannot anticipate all dangerous modules
-      * New Python versions add new modules
-      * Risk of missing something
-
-      **Security principle:**
-      "Deny by default, allow explicitly"
-
-      **Current whitelist (22 modules):**
-      math, cmath, decimal, fractions, random,
-      statistics, itertools, functools, operator,
-      string, textwrap, datetime, calendar, time,
-      collections, heapq, bisect, array, copy,
-      pprint, enum, dataclasses, re, json
-    end note
+' ==================== ROW 2 ====================
+rectangle "**Storage**\nIn-Memory" as r4 #LightYellow {
+  note as n4
+    Zero latency, no dependencies
+    Trade-off: lost on restart
+  end note
 }
 
-' ==================== CONCURRENCY ====================
-package "Decision 5: Concurrency Control" as d5 #Lavender {
-    note as n5
-      **Chosen: asyncio.Semaphore**
-
-      **Why Semaphore?**
-      * Native Python async primitive
-      * Efficient queuing (tasks wait, not rejected)
-      * No external dependencies
-      * Configurable limit
-
-      **Behavior:**
-      * Default: 10 concurrent tasks
-      * Task 11+ waits in queue
-      * Fair ordering (FIFO)
-
-      **Rate Limiting: Token Bucket**
-      * 60 requests/minute per IP
-      * Burst allowance: 10 requests
-      * Gradual refill
-    end note
+rectangle "**Streaming**\nSSE" as r5 #PaleGreen {
+  note as n5
+    HTTP-based, auto-reconnect
+    Simpler than WebSocket
+  end note
 }
 
-' ==================== STREAMING ====================
-package "Decision 6: SSE vs WebSocket" as d6 #PaleGreen {
-    note as n6
-      **Chosen: Server-Sent Events (SSE)**
-
-      **Pros:**
-      + HTTP-based (works with proxies, CDNs)
-      + Auto-reconnection built-in
-      + Simpler than WebSocket
-      + One-way is sufficient for output streaming
-
-      **Cons:**
-      - One-way only (server to client)
-      - No binary data support
-
-      **Why not WebSocket?**
-      * Overkill for one-way streaming
-      * Requires more complex client code
-      * Proxy/firewall issues more common
-    end note
+rectangle "**Concurrency**\nasyncio.Semaphore" as r6 #Lavender {
+  note as n6
+    10 concurrent tasks
+    Token bucket rate limit
+  end note
 }
 
-' ==================== CONTAINERIZATION ====================
-package "Decision 7: Full Containerization Strategy" as d7 #MistyRose {
-    note as n7
-      **Goal: Fully containerize the application**
-
-      **Problem: Docker in Docker (DinD)**
-      * API service needs to create sandbox containers
-      * If API runs in container, how to access Docker?
-
-      **Rejected approaches:**
-      ❌ Mount /var/run/docker.sock
-         - Security risk: container gets host Docker access
-         - Can access/modify any container on host
-      ❌ --privileged mode DinD
-         - Container gets full host privileges
-         - Defeats purpose of containerization
-
-      **Chosen: Kubernetes (Best Practice)**
-      ✅ API Pod calls Kubernetes API (not Docker)
-      ✅ K8s creates isolated sandbox Pods
-      ✅ No socket sharing, no privileged mode
-      ✅ RBAC controls what API Pod can do
-      ✅ NetworkPolicy isolates sandbox Pods
-
-      **Industry adoption:**
-      * AWS Lambda: Firecracker (microVM)
-      * Google Cloud Run: gVisor + K8s
-      * GitHub Codespaces: Kubernetes
-      * Replit: Kubernetes
-    end note
+' ==================== ROW 3 ====================
+rectangle "**Full Containerization**\nKubernetes" as r7 #MistyRose {
+  note as n7
+    Avoids Docker-in-Docker
+    No socket sharing
+    Industry best practice
+  end note
 }
+
+' ==================== LAYOUT ====================
+r1 -[hidden]right- r2
+r2 -[hidden]right- r3
+r4 -[hidden]right- r5
+r5 -[hidden]right- r6
+r1 -[hidden]down- r4
+r3 -[hidden]down- r6
+r4 -[hidden]down- r7
 
 @enduml
