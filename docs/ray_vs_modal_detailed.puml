@@ -1,0 +1,121 @@
+@startuml ray_vs_modal_detailed
+title Ray vs Modal - Detailed Architecture Comparison
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' ==================== RAY ARCHITECTURE ====================
+package "Ray - Distributed Computing Framework" as ray #LightBlue {
+
+    package "Communication Model" as rayComm #SkyBlue {
+        component "Shared Memory\nObject Store" as rayObjStore
+        component "Zero-Copy\nData Sharing" as rayZeroCopy
+        component "gRPC/TCP\nCross-Node" as rayGrpc
+
+        rayObjStore --> rayZeroCopy : same node
+        rayObjStore --> rayGrpc : different nodes
+    }
+
+    package "Worker Isolation" as rayIsolation #LightCyan {
+        component "Process-Level\nIsolation" as rayProcess
+        component "Actors Can\nCommunicate" as rayActorComm
+        component "Shared State\nvia Object Store" as raySharedState
+
+        rayProcess --> rayActorComm
+        rayActorComm --> raySharedState
+    }
+
+    package "GPU Autoscaling" as rayGpu #PaleGreen {
+        component "Autoscaler V2" as rayAutoscaler
+        component "request_resources()" as rayRequest
+        component "Gang Scheduling\n(Kueue)" as rayGang
+        component "GKE DRA\n(GB200 NVL72)" as rayGke
+
+        rayAutoscaler --> rayRequest
+        rayRequest --> rayGang
+        rayGang --> rayGke
+    }
+
+    note right of rayComm
+      **Ray IPC Advantages**
+      ✓ Zero-copy for numpy arrays
+      ✓ Shared memory (no serialization)
+      ✓ Object refs passed between actors
+      ✓ Automatic data locality
+      ✓ Cross-node transparent
+    end note
+}
+
+' ==================== MODAL ARCHITECTURE ====================
+package "Modal - Serverless Sandbox Platform" as modal #LightGreen {
+
+    package "Communication Model" as modalComm #PaleGreen {
+        component "Modal Volumes\n(Distributed FS)" as modalVolumes
+        component "modal.Dict\nmodal.Queue" as modalDict
+        component "i6pn IPv6\n(Experimental)" as modalI6pn
+
+        modalVolumes --> modalDict : data sharing
+        modalDict --> modalI6pn : cluster mode
+    }
+
+    package "Container Isolation" as modalIsolation #LightYellow {
+        component "gVisor\nKernel Isolation" as modalGvisor
+        component "Containers\nCannot Communicate\n(by default)" as modalNoComm
+        component "Blast Radius\nLimited to Container" as modalBlast
+
+        modalGvisor --> modalNoComm
+        modalNoComm --> modalBlast
+    }
+
+    package "GPU Scaling" as modalGpu #LightPink {
+        component "Serverless\nAuto-scale" as modalServerless
+        component "Per-Execution\nBilling" as modalBilling
+        component "No Gang\nScheduling" as modalNoGang
+
+        modalServerless --> modalBilling
+        modalBilling --> modalNoGang
+    }
+
+    note right of modalIsolation
+      **Modal Isolation (Strict)**
+      ✓ gVisor syscall filtering
+      ✓ No access to workspace
+      ✓ Network egress control
+      ✗ No shared memory
+      ✗ No direct container-to-container
+    end note
+}
+
+' ==================== COMPARISON TABLE ====================
+package "Feature Comparison" as comparison #Wheat {
+    note as compTable
+      | Feature | Ray | Modal |
+      |---------|-----|-------|
+      | **IPC Mechanism** | Shared Memory Object Store | Distributed FS (Volumes) |
+      | **Zero-Copy** | Yes (numpy arrays) | No |
+      | **Container Communication** | Yes (native) | No (isolated by design) |
+      | **Cluster Mode** | Native | Experimental (i6pn) |
+      | **Isolation Level** | Process | gVisor (kernel) |
+      | **State Sharing** | Object refs | Dict/Queue/Volumes |
+      | **GPU Gang Scheduling** | Yes (Kueue) | No |
+      | **Multi-Node Training** | Native support | Limited |
+      | **Use Case** | Distributed ML Training | Untrusted Code Execution |
+    end note
+}
+
+' ==================== KEY INSIGHT ====================
+note bottom of comparison
+  **Key Architectural Difference**
+
+  **Ray**: Designed for **trusted** distributed computing
+  - Workers CAN communicate freely
+  - Shared memory for performance
+  - Ideal for ML training across GPUs
+
+  **Modal**: Designed for **untrusted** code execution
+  - Containers are ISOLATED by design
+  - Security > Performance
+  - Ideal for running user/LLM code safely
+end note
+
+@enduml

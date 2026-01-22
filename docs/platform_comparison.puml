@@ -38,12 +38,20 @@ package "Ray (Anyscale)" as ray #LightBlue {
         component "Object Store (Shared Memory)" as rayObj
     }
 
+    package "Ray-Specific Features" as rayFeatures #PaleGreen {
+        component "Autoscaler V2" as rayAutoscaler
+        component "request_resources()" as rayRequest
+        component "Gang Scheduling (Kueue)" as rayGang
+        component "GKE DRA (GB200 NVL72)" as rayGke
+    }
+
     note bottom of ray
       **Strengths**
       + Sub-ms task scheduling
       + Millions tasks/sec
       + Multi-GPU autoscaling
-      + Stateful actors
+      + Gang scheduling (all-or-nothing)
+      + Zero-copy shared memory
       + OpenAI uses it
 
       **Weaknesses**

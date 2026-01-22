@@ -1,0 +1,137 @@
+@startuml gang_scheduling
+title Gang Scheduling - Why It's Critical for Distributed GPU Training
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' ==================== THE PROBLEM ====================
+package "The Problem: Without Gang Scheduling" as problem #FFB6C1 {
+
+    package "Distributed Training Job (needs 4 GPUs)" as job1 #LightPink {
+        component "Pod 1\n(GPU)" as pod1 #PaleGreen
+        component "Pod 2\n(GPU)" as pod2 #PaleGreen
+        component "Pod 3\n(waiting...)" as pod3 #LightGray
+        component "Pod 4\n(waiting...)" as pod4 #LightGray
+    }
+
+    note right of job1
+      **What Goes Wrong**
+      ━━━━━━━━━━━━━━━━━━━
+      1. K8s schedules Pod 1 → gets GPU
+      2. K8s schedules Pod 2 → gets GPU
+      3. Pod 3, 4 → no GPU available
+      4. Job STALLS indefinitely
+      5. GPUs held but UNUSED
+      6. Other jobs blocked
+
+      **Result**: Resource waste + job failure
+    end note
+
+    component "Kubernetes\nDefault Scheduler" as k8sDefault #LightCoral
+    k8sDefault --> pod1 : schedules one-by-one
+    k8sDefault --> pod2
+    k8sDefault --> pod3 : no resources
+}
+
+' ==================== THE SOLUTION ====================
+package "The Solution: Gang Scheduling with Kueue" as solution #90EE90 {
+
+    package "Same Job with Gang Scheduling" as job2 #PaleGreen {
+        component "Pod 1" as gpod1 #LightGreen
+        component "Pod 2" as gpod2 #LightGreen
+        component "Pod 3" as gpod3 #LightGreen
+        component "Pod 4" as gpod4 #LightGreen
+    }
+
+    component "Kueue\nQueue Manager" as kueue #LightBlue
+
+    note right of job2
+      **How Gang Scheduling Works**
+      ━━━━━━━━━━━━━━━━━━━━━━━━
+      1. Job requests 4 GPUs
+      2. Kueue checks: "Can I get ALL 4?"
+      3. If YES → Schedule all together
+      4. If NO → Keep job in queue
+      5. Never partial allocation
+      6. All-or-nothing guarantee
+
+      **Result**: No resource waste
+    end note
+
+    kueue --> job2 : all 4 GPUs available?\nYES → schedule all
+}
+
+' ==================== WHY NEEDED FOR ML ====================
+package "Why ML Training Needs Gang Scheduling" as whyNeeded #LightYellow {
+
+    package "Distributed Training Architecture" as distTrain {
+        component "Worker 0\n(Rank 0)" as w0
+        component "Worker 1\n(Rank 1)" as w1
+        component "Worker 2\n(Rank 2)" as w2
+        component "Worker 3\n(Rank 3)" as w3
+
+        w0 <--> w1 : AllReduce
+        w1 <--> w2 : gradient sync
+        w2 <--> w3 : NCCL/Gloo
+        w3 <--> w0
+    }
+
+    note bottom of distTrain
+      **Distributed Training Requirements**
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      • PyTorch DDP / Horovod / DeepSpeed
+      • ALL workers must start TOGETHER
+      • AllReduce requires ALL participants
+      • If 1 worker missing → entire job hangs
+      • Communication patterns are synchronous
+    end note
+}
+
+' ==================== KUEUE WORKFLOW ====================
+package "Kueue Workflow" as kueueFlow #Lavender {
+
+    component "1. Job Submitted" as step1
+    component "2. Kueue Simulates\nScheduling" as step2
+    component "3. Enough Resources?" as step3
+    component "4a. YES: Admit\nAll Pods" as step4a #PaleGreen
+    component "4b. NO: Keep\nIn Queue" as step4b #LightCoral
+    component "5. Cloud Autoscaler\nProvisions Nodes" as step5
+
+    step1 --> step2
+    step2 --> step3
+    step3 --> step4a : sufficient
+    step3 --> step4b : insufficient
+    step4b --> step5 : request more GPUs
+    step5 --> step3 : retry
+}
+
+' ==================== COMPARISON ====================
+package "Gang Scheduling Support" as gangSupport #Wheat {
+    note as supportTable
+      | Platform | Gang Scheduling | How |
+      |----------|-----------------|-----|
+      | **Ray** | Yes | Kueue integration |
+      | **Modal** | No | Serverless model |
+      | **Fly.io** | No | Single VM focus |
+      | **Kubernetes** | No (default) | Needs Kueue/Volcano |
+      | **Volcano** | Yes | Built-in |
+    end note
+}
+
+note bottom of gangSupport
+  **When You Need Gang Scheduling**
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Multi-GPU distributed training
+  ✓ MPI jobs (HPC workloads)
+  ✓ Ray clusters with fixed size
+  ✓ Any job requiring N resources together
+
+  **When You Don't Need It**
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ Independent serverless functions
+  ✗ Single-GPU inference
+  ✗ Stateless web services
+  ✗ Embarrassingly parallel tasks
+end note
+
+@enduml
