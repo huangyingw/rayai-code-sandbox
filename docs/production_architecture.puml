@@ -1,42 +1,52 @@
 @startuml production_architecture
-title Code Executor Sandbox - Production Architecture (Suggested)
+title Code Executor Sandbox - Production Architecture (Kubernetes)
 
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
 
 ' ==================== EXTERNAL ====================
 actor "Client" as client
-cloud "Load Balancer\n(nginx/ALB)" as lb #LightBlue
+cloud "Ingress Controller\n(nginx/ALB)" as lb #LightBlue
 
-' ==================== API TIER ====================
-package "API Tier (Stateless)" as api_tier #LightCyan {
-    component "API Server 1" as api1
-    component "API Server 2" as api2
-    component "API Server N" as api3
-}
+' ==================== KUBERNETES CLUSTER ====================
+rectangle "Kubernetes Cluster" as k8s #Azure {
 
-' ==================== QUEUE TIER ====================
-package "Message Queue" as queue_tier #LightYellow {
-    queue "Task Queue\n(Redis/RabbitMQ)" as task_queue
-    queue "Priority Queue\n(High/Normal/Low)" as priority_queue
-    queue "Dead Letter Queue" as dlq
-}
+    ' ==================== API TIER ====================
+    package "API Namespace" as api_ns #LightCyan {
+        component "API Pod 1" as api1
+        component "API Pod 2" as api2
+        component "API Pod N" as api3
+        note bottom of api1
+          ServiceAccount with
+          RBAC permissions to
+          create sandbox Pods
+        end note
+    }
 
-' ==================== WORKER TIER ====================
-package "Worker Tier (Celery/RQ)" as worker_tier #LightGreen {
-    component "Worker 1" as worker1
-    component "Worker 2" as worker2
-    component "Worker N" as worker3
+    ' ==================== SANDBOX TIER ====================
+    package "Sandbox Namespace (Isolated)" as sandbox_ns #LightGreen {
+        component "Sandbox\nPod 1" as sandbox1
+        component "Sandbox\nPod 2" as sandbox2
+        component "Sandbox\nPod N" as sandbox3
+        note bottom of sandbox1
+          **Isolation:**
+          - NetworkPolicy: deny all
+          - ResourceQuota: limited
+          - SecurityContext: non-root
+          - No serviceAccount token
+        end note
+    }
 
-    package "Container Pool" as pool {
-        component "Pre-warmed\nContainers" as containers
+    ' ==================== QUEUE TIER ====================
+    package "Infrastructure Namespace" as infra_ns #LightYellow {
+        queue "Redis\n(Task Queue)" as task_queue
+        database "Redis\n(State Store)" as redis
     }
 }
 
-' ==================== STORAGE TIER ====================
-package "Storage Tier" as storage_tier #Lavender {
-    database "Redis\n(Task State\n+ Output Buffer)" as redis
-    database "PostgreSQL\n(Task History\n+ Audit Log)" as postgres
+' ==================== EXTERNAL STORAGE ====================
+package "External Storage" as storage_tier #Lavender {
+    database "PostgreSQL\n(Task History)" as postgres
     storage "S3/MinIO\n(Large Outputs)" as s3
 }
 
@@ -44,82 +54,61 @@ package "Storage Tier" as storage_tier #Lavender {
 package "Observability" as monitoring #LightCoral {
     component "Prometheus" as prometheus
     component "Grafana" as grafana
-    component "AlertManager" as alertmanager
-    component "Logging\n(ELK/Loki)" as logging
-}
-
-' ==================== SECURITY ====================
-package "Security" as security_tier #Wheat {
-    component "API Gateway\n(Rate Limit + Auth)" as gateway
 }
 
 ' ==================== RELATIONSHIPS ====================
 client --> lb
-lb --> gateway
-gateway --> api_tier
+lb --> api_ns
 
-api1 --> task_queue
-api2 --> task_queue
-api3 --> task_queue
+api1 -[#blue]-> sandbox1 : **K8s API**\n(create Pod)
+api2 -[#blue]-> sandbox2 : **K8s API**\n(create Pod)
+api3 -[#blue]-> sandbox3 : **K8s API**\n(create Pod)
 
-task_queue --> priority_queue
-priority_queue --> worker_tier
-dlq <-- worker_tier : failed tasks
+api_ns --> task_queue : enqueue
+api_ns --> redis : read/write state
 
-worker1 --> containers
-worker2 --> containers
-worker3 --> containers
+sandbox_ns -[#red]->x sandbox_ns : **NetworkPolicy**\nNo egress allowed
 
-api_tier --> redis : read status
-worker_tier --> redis : write status
-worker_tier --> postgres : audit log
-worker_tier --> s3 : large outputs
-
-prometheus --> api_tier : scrape
-prometheus --> worker_tier : scrape
+prometheus --> api_ns : scrape metrics
 prometheus --> grafana
-alertmanager --> grafana
 
-api_tier --> logging
-worker_tier --> logging
+api_ns --> postgres : audit log
+api_ns --> s3 : large outputs
 
 ' ==================== NOTES ====================
 note right of lb
-  **Scalability**
-  - Horizontal scaling
-  - Auto-scaling groups
-  - Health check routing
+  **Why Kubernetes?**
+  Avoids Docker-in-Docker problem:
+  - No socket mounting
+  - No --privileged mode
+  - API Pod uses K8s API
+  - Industry best practice
 end note
 
-note right of priority_queue
-  **Priority Levels**
-  - High: Premium users
-  - Normal: Regular users
-  - Low: Background jobs
+note right of k8s
+  **Full Containerization**
+  All components run as Pods:
+  - API: Deployment + HPA
+  - Sandbox: Dynamic Pods
+  - Redis: StatefulSet
+  - No host dependencies
 end note
 
-note right of containers
-  **Container Pool**
-  - Pre-create N containers
-  - Reuse after cleanup
-  - Scale based on demand
-  - ~5x faster execution
+note bottom of sandbox_ns
+  **Sandbox Pod Security**
+  - securityContext.runAsNonRoot: true
+  - securityContext.readOnlyRootFilesystem: true
+  - resources.limits: {cpu: 1, memory: 128Mi}
+  - automountServiceAccountToken: false
+  - NetworkPolicy: deny all ingress/egress
 end note
 
-note bottom of redis
-  **Redis Usage**
-  - Task state (TTL: 1h)
-  - Output streaming
-  - Rate limit counters
-  - Session cache
-end note
-
-note bottom of postgres
-  **PostgreSQL Usage**
-  - Task history (30 days)
-  - User quotas
-  - Audit logs
-  - Analytics
+note bottom of api_ns
+  **RBAC Permissions**
+  API ServiceAccount can only:
+  - Create/delete Pods in sandbox-ns
+  - Get Pod logs
+  - Cannot access other namespaces
 end note
 
 @enduml

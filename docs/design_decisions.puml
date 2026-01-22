@@ -156,4 +156,36 @@ package "Decision 6: SSE vs WebSocket" as d6 #PaleGreen {
     end note
 }
 
+' ==================== CONTAINERIZATION ====================
+package "Decision 7: Full Containerization Strategy" as d7 #MistyRose {
+    note as n7
+      **Goal: Fully containerize the application**
+
+      **Problem: Docker in Docker (DinD)**
+      * API service needs to create sandbox containers
+      * If API runs in container, how to access Docker?
+
+      **Rejected approaches:**
+      ❌ Mount /var/run/docker.sock
+         - Security risk: container gets host Docker access
+         - Can access/modify any container on host
+      ❌ --privileged mode DinD
+         - Container gets full host privileges
+         - Defeats purpose of containerization
+
+      **Chosen: Kubernetes (Best Practice)**
+      ✅ API Pod calls Kubernetes API (not Docker)
+      ✅ K8s creates isolated sandbox Pods
+      ✅ No socket sharing, no privileged mode
+      ✅ RBAC controls what API Pod can do
+      ✅ NetworkPolicy isolates sandbox Pods
+
+      **Industry adoption:**
+      * AWS Lambda: Firecracker (microVM)
+      * Google Cloud Run: gVisor + K8s
+      * GitHub Codespaces: Kubernetes
+      * Replit: Kubernetes
+    end note
+}
+
 @enduml
