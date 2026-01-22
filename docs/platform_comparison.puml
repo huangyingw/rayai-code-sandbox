@@ -3,101 +3,9 @@ title Ray vs Modal vs Fly.io - Platform Comparison
 
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
+top to bottom direction
 
-' ==================== RAY ====================
-package "Ray (Anyscale)" as ray #LightBlue {
-    component "Distributed\nCompute Engine" as rayCore
-
-    package "Use Cases" as rayUse {
-        component "ML Training\n(OpenAI ChatGPT)" as rayTrain #SkyBlue
-        component "RL Agents\n(Stateful Actors)" as rayRL #SkyBlue
-        component "Hyperparameter\nSearch" as rayHyper #SkyBlue
-    }
-
-    package "Architecture" as rayArch {
-        component "Ray Core\n(Tasks + Actors)" as rayTasks
-        component "Ray Serve\n(Model Serving)" as rayServe
-        component "Object Store\n(Shared Memory)" as rayObj
-    }
-
-    note right of ray
-      **Strengths**
-      ✓ Sub-ms task scheduling
-      ✓ Millions tasks/sec
-      ✓ Multi-GPU autoscaling
-      ✓ Stateful actors
-      ✓ OpenAI uses it
-      ✓ Gang scheduling (Kueue)
-
-      **Weaknesses**
-      ✗ Self-managed complexity
-      ✗ Learning curve
-    end note
-}
-
-' ==================== MODAL ====================
-package "Modal" as modal #LightGreen {
-    component "Serverless\nGPU Platform" as modalCore
-
-    package "Use Cases" as modalUse {
-        component "AI Code\nSandboxes" as modalSandbox #PaleGreen
-        component "Batch Jobs" as modalBatch #PaleGreen
-        component "Model\nInference" as modalInfer #PaleGreen
-    }
-
-    package "Architecture" as modalArch {
-        component "Container\nOrchestration" as modalContainer
-        component "gVisor\nIsolation" as modalGvisor
-        component "Snapshot\nVolumes" as modalSnap
-    }
-
-    note right of modal
-      **Strengths**
-      ✓ Zero config serverless
-      ✓ Sub-second cold start
-      ✓ 10K+ concurrent sandboxes
-      ✓ Built-in tunneling
-      ✓ Python-native SDK
-
-      **Weaknesses**
-      ✗ No on-prem option
-      ✗ Vendor lock-in
-    end note
-}
-
-' ==================== FLY.IO ====================
-package "Fly.io" as flyio #LightCoral {
-    component "Edge\nMicro-VMs" as flyCore
-
-    package "Use Cases" as flyUse {
-        component "GPU Inference\n(A10/L40S/A100)" as flyGPU #LightPink
-        component "Global Edge\nDeployment" as flyEdge #LightPink
-        component "Scale-to-Zero\nWorkloads" as flyVM #LightPink
-    }
-
-    package "Architecture" as flyArch {
-        component "Firecracker\nMicro-VMs" as flyFirecracker
-        component "REST API\n(Machines)" as flyAPI
-        component "Global\nRegions" as flyRegions
-    }
-
-    note right of flyio
-      **Strengths**
-      ✓ <1s VM spin-up
-      ✓ Global edge network
-      ✓ Simple CLI
-      ✓ Persistent storage
-      ✓ GPU: A10/L40S/A100
-      ✓ Scale to zero
-
-      **Weaknesses**
-      ✗ Limited GPU regions
-      ✗ No AI-specific features
-      ✗ Manual sandbox setup
-    end note
-}
-
-' ==================== COMPARISON TABLE ====================
+' ==================== COMPARISON TABLE (TOP) ====================
 package "Feature Comparison" as comparison #Wheat {
     note as compTable
       | Feature | Ray | Modal | Fly.io |
@@ -114,27 +22,121 @@ package "Feature Comparison" as comparison #Wheat {
     end note
 }
 
+' ==================== RAY ====================
+package "Ray (Anyscale)" as ray #LightBlue {
+    component "Distributed Compute Engine" as rayCore
+
+    package "Use Cases" as rayUse {
+        component "ML Training (OpenAI ChatGPT)" as rayTrain #SkyBlue
+        component "RL Agents (Stateful Actors)" as rayRL #SkyBlue
+        component "Hyperparameter Search" as rayHyper #SkyBlue
+    }
+
+    package "Architecture" as rayArch {
+        component "Ray Core (Tasks + Actors)" as rayTasks
+        component "Ray Serve (Model Serving)" as rayServe
+        component "Object Store (Shared Memory)" as rayObj
+    }
+
+    note bottom of ray
+      **Strengths**
+      + Sub-ms task scheduling
+      + Millions tasks/sec
+      + Multi-GPU autoscaling
+      + Stateful actors
+      + OpenAI uses it
+
+      **Weaknesses**
+      - Self-managed complexity
+      - Learning curve
+    end note
+}
+
+' ==================== MODAL ====================
+package "Modal" as modal #LightGreen {
+    component "Serverless GPU Platform" as modalCore
+
+    package "Use Cases" as modalUse {
+        component "AI Code Sandboxes" as modalSandbox #PaleGreen
+        component "Batch Jobs" as modalBatch #PaleGreen
+        component "Model Inference" as modalInfer #PaleGreen
+    }
+
+    package "Architecture" as modalArch {
+        component "Container Orchestration" as modalContainer
+        component "gVisor Isolation" as modalGvisor
+        component "Snapshot Volumes" as modalSnap
+    }
+
+    note bottom of modal
+      **Strengths**
+      + Zero config serverless
+      + Sub-second cold start
+      + 10K+ concurrent sandboxes
+      + Built-in tunneling
+      + Python-native SDK
+
+      **Weaknesses**
+      - No on-prem option
+      - Vendor lock-in
+    end note
+}
+
+' ==================== FLY.IO ====================
+package "Fly.io" as flyio #LightCoral {
+    component "Edge Micro-VMs" as flyCore
+
+    package "Use Cases" as flyUse {
+        component "GPU Inference (A10/L40S/A100)" as flyGPU #LightPink
+        component "Global Edge Deployment" as flyEdge #LightPink
+        component "Scale-to-Zero Workloads" as flyVM #LightPink
+    }
+
+    package "Architecture" as flyArch {
+        component "Firecracker Micro-VMs" as flyFirecracker
+        component "REST API (Machines)" as flyAPI
+        component "Global Regions" as flyRegions
+    }
+
+    note bottom of flyio
+      **Strengths**
+      + <1s VM spin-up
+      + Global edge network
+      + Simple CLI
+      + GPU: A10/L40S/A100
+      + Scale to zero
+
+      **Weaknesses**
+      - Limited GPU regions
+      - No AI-specific features
+      - Manual sandbox setup
+    end note
+}
+
 ' ==================== DECISION FLOWCHART ====================
 package "When to Use What?" as decision #Lavender {
     note as decisionNote
       **Choose Ray when:**
-      • Training large ML models
-      • Need stateful RL agents
-      • Multi-GPU/multi-node required
-      • Already using Python ML stack
+      * Training large ML models
+      * Need stateful RL agents
+      * Multi-GPU/multi-node required
 
       **Choose Modal when:**
-      • Running untrusted code
-      • Serverless GPU inference
-      • Quick prototyping
-      • Don't want infra management
+      * Running untrusted code
+      * Serverless GPU inference
+      * Quick prototyping
 
       **Choose Fly.io when:**
-      • Simple GPU inference
-      • Global low-latency needed
-      • Scale-to-zero GPU workloads
-      • Prefer per-second billing
+      * Simple GPU inference
+      * Global low-latency needed
+      * Scale-to-zero GPU workloads
     end note
 }
+
+' Force vertical layout
+comparison -[hidden]down-> ray
+ray -[hidden]down-> modal
+modal -[hidden]down-> flyio
+flyio -[hidden]down-> decision
 
 @enduml
