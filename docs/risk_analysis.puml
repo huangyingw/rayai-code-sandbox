@@ -1,5 +1,4 @@
 @startuml risk_analysis
-!theme plain
 title Code Executor Sandbox - Risk Analysis & Mitigations
 
 skinparam componentStyle rectangle
@@ -15,96 +14,96 @@ legend top
 endlegend
 
 ' ==================== SECTION 1: MITIGATED RISKS ====================
-package "已缓解的安全风险 (Mitigated)" as mitigated_pkg #EEFFEE {
+package "Mitigated Security Risks" as mitigated_pkg #EEFFEE {
 
-    rectangle "容器逃逸\nContainer Escape" as r1 #6BCB77 {
+    rectangle "Container Escape" as r1 #6BCB77 {
     }
-    rectangle "资源耗尽\nFork Bomb/DoS" as r2 #6BCB77 {
+    rectangle "Resource Exhaustion\nFork Bomb/DoS" as r2 #6BCB77 {
     }
-    rectangle "网络攻击\nNetwork Attack" as r3 #6BCB77 {
+    rectangle "Network Attack" as r3 #6BCB77 {
     }
-    rectangle "沙箱绕过\n__class__ chain" as r4 #6BCB77 {
+    rectangle "Sandbox Bypass\n__class__ chain" as r4 #6BCB77 {
     }
 
     note bottom of r1
-      **防护措施:**
+      **Mitigations:**
       Docker --cap-drop=ALL
       --security-opt=no-new-privileges
     end note
 
     note bottom of r2
-      **防护措施:**
+      **Mitigations:**
       --memory=128m
       --pids-limit=50
       --cpus=0.5
     end note
 
     note bottom of r3
-      **防护措施:**
+      **Mitigations:**
       --network=none
-      完全网络隔离
+      Complete network isolation
     end note
 
     note bottom of r4
-      **防护措施:**
-      模块白名单
-      属性阻止列表
-      模式扫描器
+      **Mitigations:**
+      Module whitelist
+      Attribute blocklist
+      Pattern scanner
     end note
 }
 
 ' ==================== SECTION 2: HIGH RISKS ====================
-package "高优先级风险 (High Priority)" as high_pkg #FFEEEE {
+package "High Priority Risks" as high_pkg #FFEEEE {
 
-    rectangle "无认证\nNo Auth" as h1 #FF6B6B {
+    rectangle "No Authentication" as h1 #FF6B6B {
     }
-    rectangle "任务丢失\nTask Loss" as h2 #FF6B6B {
+    rectangle "Task Loss" as h2 #FF6B6B {
     }
-    rectangle "单点故障\nSingle Point" as h3 #FF6B6B {
+    rectangle "Single Point\nof Failure" as h3 #FF6B6B {
     }
 
     note bottom of h1
-      **问题:** 任何人可执行代码
-      **建议:** 添加 JWT/API Key
+      **Issue:** Anyone can execute code
+      **Suggestion:** Add JWT/API Key
     end note
 
     note bottom of h2
-      **问题:** 重启后任务丢失
-      **建议:** 添加 Redis 持久化
+      **Issue:** Tasks lost on restart
+      **Suggestion:** Add Redis persistence
     end note
 
     note bottom of h3
-      **问题:** 单实例无法扩展
-      **建议:** 添加负载均衡
+      **Issue:** Single instance, no scaling
+      **Suggestion:** Add load balancer
     end note
 }
 
 ' ==================== SECTION 3: MEDIUM RISKS ====================
-package "中优先级风险 (Medium Priority)" as medium_pkg #FFFFEE {
+package "Medium Priority Risks" as medium_pkg #FFFFEE {
 
-    rectangle "无监控\nNo Metrics" as m1 #FFD93D {
+    rectangle "No Metrics" as m1 #FFD93D {
     }
-    rectangle "无重试\nNo Retry" as m2 #FFD93D {
+    rectangle "No Retry" as m2 #FFD93D {
     }
-    rectangle "冷启动\nCold Start" as m3 #FFD93D {
+    rectangle "Cold Start" as m3 #FFD93D {
     }
-    rectangle "日志不足\nInsufficient Log" as m4 #FFD93D {
+    rectangle "Insufficient\nLogging" as m4 #FFD93D {
     }
 
     note bottom of m1
-      **建议:** Prometheus + Grafana
+      **Suggestion:** Prometheus + Grafana
     end note
 
     note bottom of m2
-      **建议:** Celery 任务队列
+      **Suggestion:** Celery task queue
     end note
 
     note bottom of m3
-      **建议:** 容器池预热
+      **Suggestion:** Container pool warmup
     end note
 
     note bottom of m4
-      **建议:** 审计日志
+      **Suggestion:** Audit logging
     end note
 }
 
