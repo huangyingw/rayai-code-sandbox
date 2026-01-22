@@ -1,150 +1,82 @@
 @startuml platform_comparison
 title Ray vs Modal vs Fly.io - Platform Comparison
 
-skinparam componentStyle rectangle
-skinparam defaultTextAlignment center
-top to bottom direction
+' ==================== STYLE ====================
+skinparam defaultFontSize 14
+skinparam noteFontSize 13
+skinparam packageFontSize 15
+skinparam componentFontSize 13
+skinparam padding 5
+skinparam packagePadding 10
 
-' ==================== COMPARISON TABLE (TOP) ====================
-package "Feature Comparison" as comparison #Wheat {
-    note as compTable
-      | Feature | Ray | Modal | Fly.io |
-      |---------|-----|-------|--------|
-      | **Primary Use** | Distributed ML | Serverless AI | Edge/GPU Apps |
-      | **Isolation** | Process | gVisor | Firecracker |
-      | **GPU Support** | Excellent | Strong | A10/L40S/A100 |
-      | **GPU Autoscale** | Yes (V2) | Yes | Scale-to-zero |
-      | **Cold Start** | N/A (cluster) | <1s | <1s |
-      | **Scaling** | 1000s GPUs | 10K+ sandboxes | Global edge |
-      | **Statefulness** | Actors | Volumes | Persistent VM |
-      | **Pricing** | Self-host/Anyscale | Per-execution | Per-second |
-      | **Best For** | ML Training | Code Sandbox | GPU Inference |
-    end note
-}
+left to right direction
+
+' ==================== COMPARISON TABLE ====================
+note as compTable #Wheat
+  **Feature Comparison**
+  | Feature | Ray | Modal | Fly.io |
+  |---------|-----|-------|--------|
+  | Primary Use | Distributed ML | Serverless AI | Edge/GPU |
+  | Isolation | Process | gVisor | Firecracker |
+  | GPU | Excellent | Strong | A10/L40S/A100 |
+  | Autoscale | V2 + Kueue | Yes | Scale-to-zero |
+  | Cold Start | N/A | <1s | <1s |
+  | Scaling | 1000s GPUs | 10K+ sandboxes | Global edge |
+  | Best For | ML Training | Code Sandbox | GPU Inference |
+end note
 
 ' ==================== RAY ====================
-package "Ray (Anyscale)" as ray #LightBlue {
-    component "Distributed Compute Engine" as rayCore
-
-    package "Use Cases" as rayUse {
-        component "ML Training (OpenAI ChatGPT)" as rayTrain #SkyBlue
-        component "RL Agents (Stateful Actors)" as rayRL #SkyBlue
-        component "Hyperparameter Search" as rayHyper #SkyBlue
-    }
-
-    package "Architecture" as rayArch {
-        component "Ray Core (Tasks + Actors)" as rayTasks
-        component "Ray Serve (Model Serving)" as rayServe
-        component "Object Store (Shared Memory)" as rayObj
-    }
-
-    package "Ray-Specific Features" as rayFeatures #PaleGreen {
-        component "Autoscaler V2" as rayAutoscaler
-        component "request_resources()" as rayRequest
-        component "Gang Scheduling (Kueue)" as rayGang
-        component "GKE DRA (GB200 NVL72)" as rayGke
-    }
-
-    note bottom of ray
-      **Strengths**
-      + Sub-ms task scheduling
-      + Millions tasks/sec
-      + Multi-GPU autoscaling
-      + Gang scheduling (all-or-nothing)
-      + Zero-copy shared memory
-      + OpenAI uses it
-
-      **Weaknesses**
-      - Self-managed complexity
-      - Learning curve
-    end note
+package "Ray" as ray #LightBlue {
+  component "ML Training\n(OpenAI)" as r1
+  component "RL Agents" as r2
+  component "Object Store\n(Zero-copy)" as r3
+  component "Gang Scheduling\n(Kueue)" as r4 #PaleGreen
 }
+
+note bottom of ray #LightCyan
+  **Strengths**: Sub-ms scheduling,
+  Multi-GPU, Stateful actors
+  **Weaknesses**: Complex setup
+end note
 
 ' ==================== MODAL ====================
 package "Modal" as modal #LightGreen {
-    component "Serverless GPU Platform" as modalCore
-
-    package "Use Cases" as modalUse {
-        component "AI Code Sandboxes" as modalSandbox #PaleGreen
-        component "Batch Jobs" as modalBatch #PaleGreen
-        component "Model Inference" as modalInfer #PaleGreen
-    }
-
-    package "Architecture" as modalArch {
-        component "Container Orchestration" as modalContainer
-        component "gVisor Isolation" as modalGvisor
-        component "Snapshot Volumes" as modalSnap
-    }
-
-    note bottom of modal
-      **Strengths**
-      + Zero config serverless
-      + Sub-second cold start
-      + 10K+ concurrent sandboxes
-      + Built-in tunneling
-      + Python-native SDK
-
-      **Weaknesses**
-      - No on-prem option
-      - Vendor lock-in
-    end note
+  component "Code Sandbox\n(gVisor)" as m1
+  component "Serverless\nGPU" as m2
+  component "Volumes\n(Data)" as m3
 }
+
+note bottom of modal #Honeydew
+  **Strengths**: Zero config,
+  <1s cold start, Python SDK
+  **Weaknesses**: No on-prem
+end note
 
 ' ==================== FLY.IO ====================
 package "Fly.io" as flyio #LightCoral {
-    component "Edge Micro-VMs" as flyCore
-
-    package "Use Cases" as flyUse {
-        component "GPU Inference (A10/L40S/A100)" as flyGPU #LightPink
-        component "Global Edge Deployment" as flyEdge #LightPink
-        component "Scale-to-Zero Workloads" as flyVM #LightPink
-    }
-
-    package "Architecture" as flyArch {
-        component "Firecracker Micro-VMs" as flyFirecracker
-        component "REST API (Machines)" as flyAPI
-        component "Global Regions" as flyRegions
-    }
-
-    note bottom of flyio
-      **Strengths**
-      + <1s VM spin-up
-      + Global edge network
-      + Simple CLI
-      + GPU: A10/L40S/A100
-      + Scale to zero
-
-      **Weaknesses**
-      - Limited GPU regions
-      - No AI-specific features
-      - Manual sandbox setup
-    end note
+  component "Micro-VMs\n(Firecracker)" as f1
+  component "GPU\n(A10/A100)" as f2
+  component "Global\nEdge" as f3
 }
 
-' ==================== DECISION FLOWCHART ====================
-package "When to Use What?" as decision #Lavender {
-    note as decisionNote
-      **Choose Ray when:**
-      * Training large ML models
-      * Need stateful RL agents
-      * Multi-GPU/multi-node required
+note bottom of flyio #MistyRose
+  **Strengths**: <1s spin-up,
+  Scale-to-zero, Per-second
+  **Weaknesses**: Limited regions
+end note
 
-      **Choose Modal when:**
-      * Running untrusted code
-      * Serverless GPU inference
-      * Quick prototyping
+' ==================== DECISION ====================
+note as decision #Lavender
+  **When to Use**
+  **Ray**: Multi-GPU training, RL agents
+  **Modal**: Untrusted code, serverless
+  **Fly.io**: Edge GPU, scale-to-zero
+end note
 
-      **Choose Fly.io when:**
-      * Simple GPU inference
-      * Global low-latency needed
-      * Scale-to-zero GPU workloads
-    end note
-}
-
-' Force vertical layout
-comparison -[hidden]down-> ray
-ray -[hidden]down-> modal
-modal -[hidden]down-> flyio
-flyio -[hidden]down-> decision
+' ==================== LAYOUT ====================
+compTable -[hidden]right-> ray
+ray -[hidden]right-> modal
+modal -[hidden]right-> flyio
+compTable -[hidden]down-> decision
 
 @enduml
