@@ -1,0 +1,81 @@
+@startuml gvisor_architecture
+title gVisor Architecture - Kernel-Level Isolation
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' ==================== COMPARISON ====================
+package "Traditional Container (Docker)" as traditional #FFB6C1 {
+    component "User Application" as app1
+    component "Container Runtime" as runtime1
+    component "Host Linux Kernel\n(350+ syscalls exposed)" as kernel1 #FF6B6B
+
+    app1 --> runtime1 : syscall
+    runtime1 --> kernel1 : direct pass-through
+
+    note right of kernel1
+      **Risk**: Application directly
+      accesses host kernel
+      - All 350+ syscalls available
+      - Kernel exploits possible
+    end note
+}
+
+package "gVisor Sandbox" as gvisor #90EE90 {
+    component "User Application" as app2
+
+    package "Sentry (User-space Kernel)" as sentry #98FB98 {
+        component "Syscall Handler\n(237 syscalls implemented)" as handler
+        component "Memory Manager" as mm
+        component "Network Stack" as net
+        component "Virtual File System" as vfs
+    }
+
+    component "Platform Layer\n(Systrap/KVM)" as platform
+    component "Gofer\n(File I/O Proxy)" as gofer
+    component "Host Linux Kernel\n(Only 68 syscalls allowed)" as kernel2 #90EE90
+
+    app2 --> handler : syscall intercepted
+    handler --> mm
+    handler --> net
+    handler --> vfs
+
+    sentry --> platform : limited syscalls
+    platform --> kernel2 : filtered (68 only)
+    vfs --> gofer : file requests
+    gofer --> kernel2 : sandboxed I/O
+}
+
+' ==================== SYSCALL INTERCEPTION ====================
+package "Syscall Interception Mechanism" as interception #LightYellow {
+
+    component "1. SECCOMP_RET_TRAP" as seccomp
+    component "2. SIGSYS Signal" as sigsys
+    component "3. Sentry Handler" as sentryHandler
+
+    seccomp --> sigsys : triggers
+    sigsys --> sentryHandler : control transfer
+
+    note bottom of interception
+      **Systrap Platform (Default since 2023)**
+      1. Application executes syscall
+      2. seccomp intercepts → sends SIGSYS
+      3. Sentry receives signal
+      4. Sentry handles syscall in userspace
+      5. Only 68 host syscalls ever needed
+    end note
+}
+
+' ==================== SECURITY MODEL ====================
+note bottom of gvisor
+  **gVisor Security Model**
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Attack Surface Reduction: 350 → 68 syscalls
+  • Written in memory-safe Go
+  • Two-layer defense:
+    1. Break out of Sentry (Go code)
+    2. Break out of host kernel
+  • No code shared between layers
+end note
+
+@enduml

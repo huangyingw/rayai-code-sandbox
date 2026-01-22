@@ -1,0 +1,127 @@
+@startuml ray_multi_agent
+title Ray Multi-Agent Communication & Task Distribution
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+' ==================== DRIVER ====================
+package "Driver (Entry Point)" as driver #LightBlue {
+    component "Python Script\n@ray.remote" as script
+}
+
+' ==================== CONTROL PLANE ====================
+package "Control Plane" as control #LightYellow {
+    database "Global Control Store\n(GCS)" as gcs {
+        component "Task Specs" as taskSpecs
+        component "Object Locations" as objLocs
+        component "Actor Registry" as actorReg
+        component "Computation Graph" as compGraph
+    }
+
+    component "Global Scheduler" as globalSched
+}
+
+' ==================== NODE 1 ====================
+package "Node 1" as node1 #LightGreen {
+    component "Local Scheduler" as local1
+    component "Object Store\n(Shared Memory)" as objStore1
+
+    package "Workers" as workers1 {
+        component "Agent A\n(Actor)" as agentA #PaleGreen
+        component "Agent B\n(Actor)" as agentB #PaleGreen
+    }
+}
+
+' ==================== NODE 2 ====================
+package "Node 2" as node2 #LightCoral {
+    component "Local Scheduler" as local2
+    component "Object Store\n(Shared Memory)" as objStore2
+
+    package "Workers" as workers2 {
+        component "Agent C\n(Actor)" as agentC #LightPink
+        component "Task Workers" as taskWorkers #LightPink
+    }
+}
+
+' ==================== RELATIONSHIPS ====================
+' Driver to Control
+script --> gcs : register tasks/actors
+script --> globalSched : submit tasks
+
+' Control to Nodes
+globalSched --> local1 : schedule
+globalSched --> local2 : schedule
+gcs <--> local1 : metadata sync
+gcs <--> local2 : metadata sync
+
+' Local scheduling
+local1 --> agentA : dispatch
+local1 --> agentB : dispatch
+local2 --> agentC : dispatch
+local2 --> taskWorkers : dispatch
+
+' Object store communication
+agentA --> objStore1 : read/write objects
+agentB --> objStore1 : read/write objects
+agentC --> objStore2 : read/write objects
+
+objStore1 <--> objStore2 : gRPC/TCP\nzero-copy transfer
+
+' Agent communication via objects
+agentA ..> agentB : method call\n(via object refs)
+agentA ..> agentC : cross-node\ncommunication
+
+' ==================== COMMUNICATION PATTERNS ====================
+note right of node1
+  **Intra-Node Communication**
+  ━━━━━━━━━━━━━━━━━━━━━━━
+  • Shared memory (zero-copy)
+  • Object references
+  • Sub-millisecond latency
+end note
+
+note right of node2
+  **Inter-Node Communication**
+  ━━━━━━━━━━━━━━━━━━━━━━━
+  • gRPC/TCP transport
+  • Automatic object replication
+  • Lineage-based fault recovery
+end note
+
+' ==================== AGENT COMMUNICATION DETAIL ====================
+package "Agent Communication Pattern" as commPattern #Lavender {
+    component "Agent A" as a1
+    component "Object Store" as os
+    component "Agent B" as b1
+
+    a1 --> os : 1. put(data)\nreturns ObjectRef
+    os --> b1 : 2. get(ObjectRef)\nzero-copy if local
+    a1 --> b1 : 3. actor_b.method.remote(ObjectRef)
+}
+
+note bottom of commPattern
+  **How Agents Communicate**
+  ━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Producer puts data → Object Store
+  2. Returns ObjectRef (not actual data)
+  3. Consumer receives ObjectRef
+  4. Data fetched only when needed
+  5. Zero-copy if on same node
+  6. Auto-replicate if on different node
+end note
+
+' ==================== TASK DISTRIBUTION ====================
+note bottom of globalSched
+  **Bottom-Up Scheduling**
+  ━━━━━━━━━━━━━━━━━━━━━━
+  1. Task submitted to local scheduler
+  2. If resources available → execute locally
+  3. If not → forward to global scheduler
+  4. Global scheduler finds best node:
+     - Data locality (where objects are)
+     - Resource availability (CPU/GPU/RAM)
+     - Load balancing
+  5. Millions of tasks/sec with <1ms latency
+end note
+
+@enduml
