@@ -1,90 +1,130 @@
 @startuml dynamic_discovery
-title Dynamic Discovery & Autonomous Delegation
+title Dynamic Discovery - Challenges & Mitigations
 
 skinparam defaultTextAlignment center
 skinparam noteBackgroundColor #FFFFCC
 skinparam packageBackgroundColor #F8F8F8
 top to bottom direction
 
-' ==================== THE PROBLEM ====================
-package "Challenge: Pre-defined Doesn't Work" as challenge #LightCoral {
-    note as problemNote
-      Traditional approach FAILS:
-      ----
-      <code>
-      if needs_containerization:  # Can't know in advance!
-          call_agent_b()
-      </code>
-      ----
-      Discovery emerges during Claude's reasoning
-    end note
-}
-
-' ==================== THE SOLUTION ====================
-package "Solution: Claude Self-Reporting" as solution #LightGreen {
-    note as solutionNote
-      Claude recognizes during execution:
-      ----
-      * "This won't work in production as-is"
-      * "I need different expertise for this"
-      * "Let me request collaboration"
-    end note
-}
-
-' ==================== IMPLEMENTATION ====================
-package "Implementation: request_collaboration() Tool" as impl #LightBlue {
-    note as implNote
-      <code>
-      @tool
-      def request_collaboration(
-          issue: str,
-          expertise: str,  # "devops", "security"
-          context: dict
-      ):
-          return orchestrator.delegate(...)
-      </code>
-      ----
-      + System prompt guides when to delegate
-      + Claude autonomously decides to call
-    end note
-}
-
-' ==================== CHALLENGES ====================
-package "Real-World Challenges" as challenges #Orange {
-    note as challengeNote
-      **AI Accuracy Issues:**
-      ----
-      | Problem | Impact |
-      |---------|--------|
-      | False positive | Unnecessary delegation |
-      | False negative | Misses when help needed |
-      | Wrong expertise | Delegates to wrong agent |
-      | Context loss | Incomplete handoff |
-      ----
-      **Mitigations:**
-      * Human-in-the-loop approval
-      * Confidence threshold
-      * Retry with feedback
-      * Structured output validation
-    end note
-}
-
-' ==================== KEY INSIGHT ====================
-package "LLM Agents vs Microservices" as insight #Lavender {
-    note as insightNote
+' ==================== CORE CONCEPT ====================
+package "Emergent Collaboration Concept" as concept #LightBlue {
+    note as conceptNote
+      **LLM Agents vs Microservices**
       | Aspect | Microservices | LLM Agents |
       |--------|---------------|------------|
       | Logic | Pre-defined | Emergent |
       | Routing | Static rules | Reasoning |
-      | Accuracy | 100% | ~85-95% |
+      | Accuracy | 100% | 85-95% |
       | Flexibility | Low | High |
     end note
 }
 
+' ==================== CHALLENGES ====================
+package "Real-World Challenges" as challenges #LightCoral {
+    
+    package "Accuracy Issues" as accuracy {
+        component "False Positive\n(Unnecessary delegation)" as fp #Pink
+        component "False Negative\n(Misses when help needed)" as fn #Pink
+        component "Wrong Routing\n(Delegates to wrong agent)" as wr #Pink
+        component "Context Loss\n(Incomplete handoff)" as cl #Pink
+    }
+    
+    note bottom of challenges
+      **Impact:**
+      * Wasted resources
+      * Task failures
+      * Rework needed
+      * Quality degradation
+    end note
+}
+
+' ==================== MITIGATIONS ====================
+package "Mitigation Strategies" as mitigations #LightGreen {
+    
+    package "1. Human-in-the-Loop" as hitl #PaleGreen {
+        note as hitlNote
+          Agent A wants to delegate:
+          ----
+          [Approve] [Reject] [Modify]
+          ----
+          Critical decisions need human OK
+        end note
+    }
+    
+    package "2. Confidence Threshold" as conf #PaleGreen {
+        note as confNote
+          <code>
+          if confidence > 0.9:
+              auto_delegate()
+          else:
+              request_human_approval()
+          </code>
+        end note
+    }
+    
+    package "3. Structured Output" as struct #PaleGreen {
+        note as structNote
+          Force JSON format:
+          <code>
+          {
+            "action": "delegate",
+            "to": "devops_agent",
+            "reason": "...",
+            "context": {...}
+          }
+          </code>
+          Reduces ambiguity
+        end note
+    }
+    
+    package "4. Feedback Loop" as feedback #PaleGreen {
+        note as feedbackNote
+          Error → Learn → Improve
+          ----
+          * Log all delegation decisions
+          * Track success/failure
+          * Fine-tune prompts
+          * Adjust thresholds
+        end note
+    }
+}
+
+' ==================== REALISTIC WORKFLOW ====================
+package "Production-Ready Workflow" as workflow #Lavender {
+    note as workflowNote
+      <code>
+      Agent A discovers: "Need containerization"
+                ↓
+      Confidence check: 0.85 < 0.9
+                ↓
+      Request human approval
+                ↓
+      Human: [Approve]
+                ↓
+      Delegate to Agent B
+                ↓
+      Log outcome for learning
+      </code>
+    end note
+}
+
+' ==================== BOTTOM LINE ====================
+package "Current State of Art" as sota #Gold {
+    note as sotaNote
+      **Why fully autonomous multi-agent is hard:**
+      ----
+      Technically feasible ✓
+      Production-grade accuracy ✗ (not yet)
+      ----
+      **Current best practice:**
+      Semi-autonomous with human oversight
+    end note
+}
+
 ' Force vertical layout
-challenge -[hidden]down-> solution
-solution -[hidden]down-> impl
-impl -[hidden]down-> challenges
-challenges -[hidden]down-> insight
+concept -[hidden]down-> challenges
+challenges -[hidden]down-> mitigations
+mitigations -[hidden]down-> workflow
+workflow -[hidden]down-> sota
 
 @enduml
