@@ -1,81 +1,87 @@
 @startuml gvisor_architecture
-title gVisor Architecture - Kernel-Level Isolation
+title Container Runtime Comparison: Docker (runc) vs gVisor
 
-skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
 
-' ==================== COMPARISON ====================
-package "Traditional Container (Docker)" as traditional #FFB6C1 {
-    component "User Application" as app1
-    component "Container Runtime" as runtime1
-    component "Host Linux Kernel\n(350+ syscalls exposed)" as kernel1 #FF6B6B
+' ==================== ECOSYSTEM ====================
+package "Container Ecosystem" as ecosystem #Azure {
+    rectangle "Container Engine\nDocker, Podman, containerd" as engine
 
-    app1 --> runtime1 : syscall
-    runtime1 --> kernel1 : direct pass-through
-
-    note right of kernel1
-      **Risk**: Application directly
-      accesses host kernel
-      - All 350+ syscalls available
-      - Kernel exploits possible
-    end note
-}
-
-package "gVisor Sandbox" as gvisor #90EE90 {
-    component "User Application" as app2
-
-    package "Sentry (User-space Kernel)" as sentry #98FB98 {
-        component "Syscall Handler\n(237 syscalls implemented)" as handler
-        component "Memory Manager" as mm
-        component "Network Stack" as net
-        component "Virtual File System" as vfs
+    rectangle "OCI Runtime" as runtime {
+        rectangle "**runc**\n(default)" as runc #FFB6C1
+        rectangle "**gVisor**\n(runsc)" as gvisor #90EE90
+        rectangle "**Kata**\n(microVM)" as kata #87CEEB
     }
 
-    component "Platform Layer\n(Systrap/KVM)" as platform
-    component "Gofer\n(File I/O Proxy)" as gofer
-    component "Host Linux Kernel\n(Only 68 syscalls allowed)" as kernel2 #90EE90
-
-    app2 --> handler : syscall intercepted
-    handler --> mm
-    handler --> net
-    handler --> vfs
-
-    sentry --> platform : limited syscalls
-    platform --> kernel2 : filtered (68 only)
-    vfs --> gofer : file requests
-    gofer --> kernel2 : sandboxed I/O
+    engine --> runtime
 }
 
-' ==================== SYSCALL INTERCEPTION ====================
-package "Syscall Interception Mechanism" as interception #LightYellow {
+' ==================== ARCHITECTURE COMPARISON ====================
+package "Docker (runc)" as docker_arch #FFB6C1 {
+    rectangle "Application" as app1
+    rectangle "libc" as libc1
+    rectangle "syscall" as sys1
+    rectangle "**Host Kernel**\n(shared, ~400 syscalls)" as kernel1 #FF6B6B
 
-    component "1. SECCOMP_RET_TRAP" as seccomp
-    component "2. SIGSYS Signal" as sigsys
-    component "3. Sentry Handler" as sentryHandler
-
-    seccomp --> sigsys : triggers
-    sigsys --> sentryHandler : control transfer
-
-    note bottom of interception
-      **Systrap Platform (Default since 2023)**
-      1. Application executes syscall
-      2. seccomp intercepts → sends SIGSYS
-      3. Sentry receives signal
-      4. Sentry handles syscall in userspace
-      5. Only 68 host syscalls ever needed
-    end note
+    app1 -down-> libc1
+    libc1 -down-> sys1
+    sys1 -down-> kernel1
 }
 
-' ==================== SECURITY MODEL ====================
-note bottom of gvisor
-  **gVisor Security Model**
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  • Attack Surface Reduction: 350 → 68 syscalls
-  • Written in memory-safe Go
-  • Two-layer defense:
-    1. Break out of Sentry (Go code)
-    2. Break out of host kernel
-  • No code shared between layers
+package "gVisor (runsc)" as gvisor_arch #90EE90 {
+    rectangle "Application" as app2
+    rectangle "libc" as libc2
+    rectangle "syscall" as sys2
+    rectangle "**Sentry**\n(user-space kernel)\n~200 syscalls" as sentry #98FB98
+    rectangle "Host Kernel\n(only 68 syscalls)" as kernel2
+
+    app2 -down-> libc2
+    libc2 -down-> sys2
+    sys2 -down-> sentry
+    sentry -down-> kernel2 : filtered
+}
+
+' ==================== COMPARISON TABLE ====================
+note bottom of docker_arch
+  | Feature | Value |
+  | Isolation | namespaces + cgroups |
+  | Syscalls | Direct to kernel |
+  | Attack Surface | Large (~400 syscalls) |
+  | Performance | Native |
+  | Compatibility | Full |
 end note
+
+note bottom of gvisor_arch
+  | Feature | Value |
+  | Isolation | User-space kernel |
+  | Syscalls | Intercepted by Sentry |
+  | Attack Surface | Small (~68 syscalls) |
+  | Performance | ~10-30% overhead |
+  | Compatibility | Partial |
+end note
+
+' ==================== ATTACK SURFACE ====================
+note as attack_surface
+  **Attack Surface Comparison**
+
+  runc:        ████████████████████ (400 syscalls)
+  gVisor:      ████ (68 syscalls to host)
+  Firecracker: █ (hardware boundary)
+end note
+
+' ==================== USE CASES ====================
+note as use_cases
+  **Recommended Use Cases**
+
+  | Scenario | Recommendation |
+  | General apps | Docker (runc) |
+  | **Untrusted code** | **gVisor** |
+  | Max performance | Docker (runc) |
+  | Max security | Firecracker |
+end note
+
+' ==================== LAYOUT ====================
+docker_arch -[hidden]right- gvisor_arch
+attack_surface -[hidden]down- use_cases
 
 @enduml
