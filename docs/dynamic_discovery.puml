@@ -1,0 +1,169 @@
+@startuml dynamic_discovery
+title Dynamic Discovery & Autonomous Delegation
+
+skinparam defaultTextAlignment left
+skinparam noteBackgroundColor #FFFFCC
+
+' ==================== THE PROBLEM ====================
+package "The Challenge" as challenge #LightCoral {
+    note as problemNote
+      **Pre-defined workflows don't work here!**
+
+      Traditional approach:
+      <code>
+      if needs_containerization:
+          call_agent_b()
+      </code>
+
+      **Problem:** We don't know in advance
+      what issues will be discovered.
+
+      The "need for containerization" emerges
+      during Claude's reasoning process.
+    end note
+}
+
+' ==================== THE SOLUTION ====================
+package "Solution: Claude Self-Reporting" as solution #LightGreen {
+    note as solutionNote
+      **Claude Code has built-in awareness:**
+
+      During execution, Claude can recognize:
+      • "This code won't work in production as-is"
+      • "I'm not the right expert for this subtask"
+      • "This requires different skills/tools"
+
+      **Claude autonomously decides to:**
+      1. Report the discovery
+      2. Request collaboration
+      3. Continue with what it CAN do
+    end note
+}
+
+' ==================== IMPLEMENTATION ====================
+package "Implementation Options" as impl #LightBlue {
+
+    package "Option 1: Tool-Based Reporting" as opt1 {
+        note as opt1Note
+          **Give Claude a "request_help" tool:**
+          <code>
+          @tool
+          def request_collaboration(
+              issue: str,
+              expertise_needed: str,
+              context: dict
+          ) -> str:
+              """Request another agent's help"""
+              return orchestrator.delegate(
+                  issue, expertise_needed, context
+              )
+          </code>
+
+          Claude calls this when it discovers
+          something outside its expertise.
+        end note
+    }
+
+    package "Option 2: System Prompt" as opt2 {
+        note as opt2Note
+          **Instruct Claude in system prompt:**
+
+          "When you discover a task that requires
+          different expertise (DevOps, Security, etc.),
+          use the request_collaboration() tool to
+          delegate. Do not try to do everything yourself.
+
+          Examples of when to delegate:
+          - Containerization → DevOps agent
+          - Security review → Security agent
+          - Database design → DBA agent"
+        end note
+    }
+
+    package "Option 3: Reflection Loop" as opt3 {
+        note as opt3Note
+          **Periodic self-check:**
+          <code>
+          while working:
+              result = claude.step()
+              
+              # Ask Claude to reflect
+              reflection = claude.ask(
+                  "Do you need help from
+                   another specialist?"
+              )
+              
+              if reflection.needs_help:
+                  delegate(reflection.task)
+          </code>
+        end note
+    }
+}
+
+' ==================== CONCRETE EXAMPLE ====================
+package "Your Example: Data Download → Containerization" as example #Lavender {
+    note as exampleNote
+      **Timeline:**
+
+      1. User: "Implement data download feature"
+
+      2. Agent A (Claude Code) starts working...
+         - Writing download logic ✓
+         - Adding error handling ✓
+         - Writing tests ✓
+
+      3. **Discovery moment:**
+         Claude thinks: "Wait, this uses local file paths.
+         For production, this needs to run in a container
+         with proper volume mounts. I should ask a DevOps
+         agent to handle the containerization."
+
+      4. Agent A calls:
+         <code>
+         request_collaboration(
+             issue="needs_containerization",
+             expertise_needed="devops",
+             context={
+                 "code": current_code,
+                 "reason": "production deployment needs
+                           container with volume mounts",
+                 "requirements": ["Dockerfile", "docker-compose"]
+             }
+         )
+         </code>
+
+      5. Agent A continues working on other parts
+         (API endpoints, documentation, etc.)
+
+      6. Agent B (DevOps) receives task, creates:
+         - Dockerfile
+         - docker-compose.yml
+         - CI/CD pipeline
+
+      7. Agent A receives notification, integrates result
+
+      8. Feature complete with containerization!
+    end note
+}
+
+' ==================== KEY INSIGHT ====================
+package "Key Insight" as insight #Gold {
+    note as insightNote
+      **The magic is in Claude's reasoning:**
+
+      Claude doesn't follow a pre-defined flowchart.
+      It THINKS about the problem and RECOGNIZES
+      when it needs help.
+
+      This is why multi-agent systems with LLMs
+      are different from traditional microservices:
+
+      | Traditional | LLM Agents |
+      |-------------|------------|
+      | Pre-defined rules | Emergent behavior |
+      | if/else logic | Reasoning |
+      | Static workflow | Dynamic collaboration |
+    end note
+}
+
+@enduml

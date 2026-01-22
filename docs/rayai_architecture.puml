@@ -1,0 +1,106 @@
+@startuml rayai_architecture
+title RayAI Platform - Multi-Agent Architecture
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+skinparam packageBackgroundColor #F8F8F8
+
+' ==================== TOP LEVEL ====================
+package "RayAI Platform" as platform #LightBlue {
+
+    ' ==================== AGENT LAYER ====================
+    package "Agent Layer" as agentLayer #LightGreen {
+        component "Agent A\n(Research)" as agentA #PaleGreen
+        component "Agent B\n(Code Gen)" as agentB #PaleGreen
+        component "Agent C\n(Executor)" as agentC #PaleGreen
+        component "Agent N\n(Dynamic)" as agentN #LightGray
+
+        note bottom of agentLayer
+          **Each Agent = Claude Code Instance**
+          • Autonomous decision making
+          • Can discover & report issues
+          • Can request collaboration
+        end note
+    }
+
+    ' ==================== RAY RUNTIME ====================
+    package "Ray Runtime (Distributed)" as rayRuntime #SkyBlue {
+        component "Global Scheduler" as scheduler
+        component "Task Queue" as taskQ
+        component "Resource Manager" as resMgr
+
+        package "Capabilities" as caps {
+            component "Auto-scaling\n(1000s nodes)" as scale
+            component "Parallel Execution" as parallel
+            component "Auto-retry\n& Recovery" as retry
+            component "Checkpointing" as checkpoint
+        }
+    }
+
+    ' ==================== SHARED STATE ====================
+    package "Shared State (Ray Object Store)" as sharedState #LightYellow {
+        database "Task Context" as taskCtx
+        database "Agent Memory" as agentMem
+        database "Code Snapshots" as codeSnap
+        database "Collaboration\nRequests" as collabReq
+    }
+
+    ' ==================== SANDBOX LAYER ====================
+    package "gVisor Sandboxed Execution" as sandboxLayer #LightCoral {
+        component "Sandbox 1" as sb1 #LightPink
+        component "Sandbox 2" as sb2 #LightPink
+        component "Sandbox N" as sbN #LightPink
+
+        note bottom of sandboxLayer
+          **Security Features**
+          • gVisor isolation
+          • Network isolation
+          • Resource limits
+          • High-throughput function calling
+        end note
+    }
+}
+
+' ==================== CONNECTIONS ====================
+agentA --> scheduler : submit tasks
+agentB --> scheduler
+agentC --> scheduler
+
+scheduler --> taskQ : queue
+taskQ --> resMgr : allocate
+resMgr --> sb1 : execute
+resMgr --> sb2 : execute
+
+agentA --> taskCtx : read/write
+agentB --> taskCtx
+agentA --> collabReq : request help
+scheduler --> collabReq : check requests
+scheduler --> agentB : assign subtask
+
+' ==================== DYNAMIC COLLABORATION BOX ====================
+package "Dynamic Collaboration Flow" as collabFlow #Lavender {
+    note as collabNote
+      **How Agents Collaborate Dynamically:**
+
+      1. **Discovery**: Agent A (Claude Code) discovers
+         "This needs containerization"
+
+      2. **Report**: Agent A writes to Collaboration Requests:
+         {"need": "containerization", "context": ...}
+
+      3. **Match**: Scheduler finds Agent B with DevOps skills
+
+      4. **Delegate**: Agent B receives subtask + context
+
+      5. **Continue**: Agent A keeps working (non-blocking)
+
+      6. **Complete**: Agent B finishes, writes result
+
+      7. **Notify**: Agent A gets notification, integrates result
+
+      **Key: No pre-defined workflow!**
+      Claude autonomously decides when to collaborate.
+    end note
+}
+
+@enduml

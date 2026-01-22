@@ -1,0 +1,109 @@
+@startuml rayai_dynamic_collaboration
+title RayAI - Dynamic Agent Collaboration (Discovery-Based)
+
+skinparam sequenceArrowThickness 2
+skinparam participantPadding 15
+skinparam defaultTextAlignment center
+
+' ==================== PARTICIPANTS ====================
+box "RayAI Platform" #LightBlue
+    participant "Orchestrator\n(Ray Runtime)" as Orch #SkyBlue
+end box
+
+box "Agent Pool" #LightGreen
+    participant "Agent A\n(Claude Code)" as A #PaleGreen
+    participant "Agent B\n(Claude Code)" as B #PaleGreen
+    participant "Agent C\n(Available)" as C #LightGray
+end box
+
+box "Infrastructure" #LightYellow
+    database "Shared Context\n(Ray Object Store)" as Store
+    participant "gVisor Sandbox" as Sandbox #Wheat
+end box
+
+' ==================== INITIAL TASK ====================
+== User Submits Task ==
+
+[-> Orch : "Implement data download feature"
+Orch -> A : assign_task()
+activate A
+
+A -> Sandbox : execute code
+activate Sandbox
+Sandbox --> A : running...
+
+== Dynamic Discovery (NOT Pre-defined!) ==
+
+note over A #LightCoral
+  **Claude Code discovers issue:**
+  "This code needs to run in a container
+  for production deployment.
+  I should delegate this to a DevOps agent."
+
+  **This is NOT pre-coded logic!**
+  Claude autonomously recognizes the need.
+end note
+
+A -> A : Claude thinks:\n"Need containerization,\nbut I'm focused on\ndata download logic"
+
+== Autonomous Delegation ==
+
+A -> Store : **report_discovery()**\n{\n  "issue": "needs_containerization",\n  "context": code_snapshot,\n  "reason": "production deployment"\n}
+activate Store
+Store --> A : discovery_ref
+deactivate Store
+
+A -> Orch : **request_collaboration()**\n"Need DevOps expertise\nfor containerization"
+activate Orch
+
+note over Orch #LightBlue
+  **Orchestrator decides:**
+  • Find agent with DevOps skills
+  • Agent B is available
+  • Assign sub-task
+end note
+
+Orch -> B : assign_subtask(discovery_ref)
+deactivate Orch
+activate B
+
+A -> A : **Continue working**\non data download\n(non-blocking)
+
+note right of A #PaleGreen
+  Agent A doesn't stop!
+  Continues other aspects
+  of the feature.
+end note
+
+== Agent B Works ==
+
+B -> Store : get(discovery_ref)
+Store --> B : context + code
+
+B -> Sandbox : execute containerization
+Sandbox --> B : Dockerfile, docker-compose
+
+B -> Store : put(containerization_result)
+Store --> B : result_ref
+
+== Completion & Integration ==
+
+B -> Orch : **task_complete(result_ref)**
+deactivate B
+Orch -> A : **notify_completion(result_ref)**
+
+A -> Store : get(result_ref)
+Store --> A : containerization_result
+
+A -> A : Integrate containerization\ninto feature
+
+A -> Sandbox : final testing
+Sandbox --> A : all tests pass
+deactivate Sandbox
+
+A --> Orch : **feature_complete()**
+deactivate A
+
+[<-- Orch : "Data download feature ready\n(with containerization)"
+
+@enduml
