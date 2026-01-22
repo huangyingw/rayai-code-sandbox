@@ -67,13 +67,21 @@ api3 -[#blue]-> sandbox3 : **K8s API**\n(create Pod)
 api_ns --> task_queue : enqueue
 api_ns --> redis : read/write state
 
-sandbox_ns -[#red]->x sandbox_ns : **NetworkPolicy**\nNo egress allowed
-
 prometheus --> api_ns : scrape metrics
 prometheus --> grafana
 
 api_ns --> postgres : audit log
 api_ns --> s3 : large outputs
+
+' ==================== BLOCKED CONNECTION ====================
+note as networkBlock #Pink
+  **NetworkPolicy**
+  Sandbox namespace has
+  NO egress allowed
+  (isolated from network)
+end note
+
+sandbox_ns .. networkBlock
 
 ' ==================== NOTES ====================
 note right of lb
